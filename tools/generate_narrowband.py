@@ -1,15 +1,19 @@
 from dotenv import load_dotenv
 from minio import Minio
-from torchsig.datasets.modulations import ModulationsDataset
-from torchsig.datasets import conf
-from torchsig.utils.dataset import collate_fn
 from typing import List
 import click
 import os
 
+from torchsig.datasets.modulations import ModulationsDataset
+from torchsig.datasets import conf
+from torchsig.utils.dataset import collate_fn
+from torchsig.datasets.signal_classes import torchsig_signals
+
 from selfrf.data.data_generators import DatasetLoader, DatasetCreator, RFCOCODatasetWriter
 from selfrf.data.storage import MinioBackend, FilesystemBackend
 load_dotenv()
+
+modulation_list = torchsig_signals.class_list
 
 
 def get_backend(to_bucket: bool = False):
@@ -32,11 +36,20 @@ def generate(root: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
     for config in configs:
         num_samples = config.num_samples if num_samples_override <= 0 else num_samples_override
         num_iq_samples = config.num_iq_samples if num_iq_samples_override <= 0 else num_iq_samples_override
+
         print(
             f'batch_size -> {batch_size} num_samples -> {num_samples}, config -> {config}')
 
         split = "train" if "train" in config.name else "val"
         dataset_name = config.name.removesuffix(f"_{split}")
+
+        if split == "val" and num_samples_override >= 0:
+            # adjust for validation set
+            num_samples = int(num_samples_override * 0.1)
+
+        if num_samples < len(modulation_list):
+            raise ValueError(
+                f"Number of samples {num_samples} must be greater than number of modulation classes {len(modulation_list)}")
 
         ds = ModulationsDataset(
             level=config.level,

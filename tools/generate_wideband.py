@@ -1,13 +1,13 @@
 from dotenv import load_dotenv
 from minio import Minio
-from torchsig.datasets.wideband import WidebandModulationsDataset
-from torchsig.datasets import conf
-from torchsig.datasets.signal_classes import torchsig_signals
 from torchsig.utils.dataset import collate_fn
 from typing import List
 import click
 import os
 
+from torchsig.datasets.wideband import WidebandModulationsDataset
+from torchsig.datasets import conf
+from torchsig.datasets.signal_classes import torchsig_signals
 
 from selfrf.data.data_generators import DatasetLoader, DatasetCreator, RFCOCODatasetWriter
 from selfrf.data.storage import MinioBackend, FilesystemBackend
@@ -51,6 +51,14 @@ def generate(root: str,
 
         split = "train" if "train" in config.name else "val"
         dataset_name = config.name.removesuffix(f"_{split}")
+
+        if split == "val" and num_samples_override >= 0:
+            # adjust for validation set
+            num_samples = int(num_samples_override // 0.1)
+
+        if num_samples < len(modulation_list):
+            raise ValueError(
+                f"Number of samples {num_samples} must be greater than number of modulation classes {len(modulation_list)}")
 
         wideband_ds = WidebandModulationsDataset(
             level=config.level,
