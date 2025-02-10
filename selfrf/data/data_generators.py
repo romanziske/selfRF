@@ -56,6 +56,16 @@ class DatasetLoader:
                     pass
         return num_workers
 
+    def _get_mp_context(self, num_workers: int):
+        if num_workers <= 1:
+            return None
+
+        system = platform.system()
+        if system == "Windows":
+            return torch.multiprocessing.get_context("spawn")
+        else:  # Linux and Darwin (macOS)
+            return torch.multiprocessing.get_context("fork")
+
     def __init__(
         self,
         dataset: SignalDataset,
@@ -69,8 +79,7 @@ class DatasetLoader:
         batch_size = batch_size if batch_size is not None else os.cpu_count() // 2
         prefetch_factor = None if num_workers <= 1 else prefetch_factor
 
-        multiprocessing_context = None if num_workers <= 1 else torch.multiprocessing.get_context(
-            "fork")
+        multiprocessing_context = self._get_mp_context(num_workers)
 
         self.loader = DataLoader(
             dataset,
