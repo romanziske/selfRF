@@ -25,8 +25,8 @@ def get_backend(to_bucket: bool = False):
             endpoint=os.getenv("MINIO_ENDPOINT"),
             access_key=os.getenv("MINIO_ACCESS_KEY"),
             secret_key=os.getenv("MINIO_SECRET_KEY"),
-            secure=bool(os.getenv("MINIO_SECURE", False)),
-            cert_check=bool(os.getenv("MINIO_CERT_CHECK", True)),
+            secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
+            cert_check=os.getenv("MINIO_SECURE", "true").lower() == "true",
         ),
         bucket=os.getenv("MINIO_BUCKET")
     )
@@ -46,19 +46,19 @@ def generate(root: str,
 
         prefetch_factor = None if num_workers <= 1 else 4
 
-        print(
-            f'batch_size -> {batch_size} num_samples -> {num_samples}, config -> {config}')
-
         split = "train" if "train" in config.name else "val"
         dataset_name = config.name.removesuffix(f"_{split}")
 
         if split == "val" and num_samples_override >= 0:
             # adjust for validation set
-            num_samples = int(num_samples_override // 0.1)
+            num_samples = int(num_samples_override * 0.1)
 
         if num_samples < len(modulation_list):
             raise ValueError(
                 f"Number of samples {num_samples} must be greater than number of modulation classes {len(modulation_list)}")
+
+        print(
+            f'batch_size -> {batch_size} num_samples -> {num_samples}, config -> {config}')
 
         wideband_ds = WidebandModulationsDataset(
             level=config.level,

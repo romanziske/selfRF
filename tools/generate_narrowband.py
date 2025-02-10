@@ -37,9 +37,6 @@ def generate(root: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
         num_samples = config.num_samples if num_samples_override <= 0 else num_samples_override
         num_iq_samples = config.num_iq_samples if num_iq_samples_override <= 0 else num_iq_samples_override
 
-        print(
-            f'batch_size -> {batch_size} num_samples -> {num_samples}, config -> {config}')
-
         split = "train" if "train" in config.name else "val"
         dataset_name = config.name.removesuffix(f"_{split}")
 
@@ -51,6 +48,8 @@ def generate(root: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
             raise ValueError(
                 f"Number of samples {num_samples} must be greater than number of modulation classes {len(modulation_list)}")
 
+        print(
+            f'batch_size -> {batch_size} num_samples -> {num_samples}, config -> {config}')
         ds = ModulationsDataset(
             level=config.level,
             num_samples=num_samples,
