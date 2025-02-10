@@ -77,13 +77,15 @@ class TorchsigNarrowbandRFCOCODataModule(RFCOCODataModule):
     def setup(self, stage=None):
 
         self.train_dataset = RFCOCODataset(
-            root=self.root / "narrowband_clean_train",
+            root=self.root / "narrowband_clean",
+            split="train",
             transform=self.transform,
             target_transform=self.target_transform,
         )
 
         self.val_dataset = RFCOCODataset(
-            root=self.root / "narrowband_clean_val",
+            root=self.root / "narrowband_clean",
+            split="val",
             transform=self.transform,
             target_transform=self.target_transform,
         )
@@ -98,13 +100,15 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
     def setup(self, stage=None):
 
         self.train_dataset = RFCOCODataset(
-            root=self.root / "wideband_clean_train",
+            root=self.root / "wideband_clean",
+            split="train",
             transform=self.transform,
             target_transform=self.target_transform,
         )
 
         self.val_dataset = RFCOCODataset(
-            root=self.root / "wideband_clean_val",
+            root=self.root / "wideband_clean",
+            split="val",
             transform=self.transform,
             target_transform=self.target_transform,
         )

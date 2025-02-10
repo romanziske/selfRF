@@ -4,7 +4,7 @@ from pathlib import Path
 import platform
 import random
 from functools import partial
-from typing import List, Optional, Callable, Tuple, Dict
+from typing import List, Literal, Optional, Callable, Tuple, Dict
 import json
 
 import tqdm
@@ -114,28 +114,12 @@ class RFCOCODatasetWriter(DatasetWriter):
 
     Directory layout:
         dataset_name/
-            data/
+            split/
                 iq_0.npy  # IQ samples in complex64 format
                 iq_1.npy
                 ...
             annotations/
-                instances_dataset_name.json  # COCO-styled format annotations
-
-    RF COCO format attributes:
-        - data: list of IQ frame metadata including:
-            - id: unique identifier
-            - file_name: relative path to .npy file
-            - sample_count: number of IQ samples
-        - annotations: list of signal annotations including:
-            - id: unique identifier
-            - image_id: corresponding IQ frame id
-            - class_name: signal type(e.g. "ook", "fsk")
-            - class_index: numeric class identifier
-            - snr: signal-to-noise ratio
-            - bandwidth: normalized signal bandwidth
-            - center_freq: normalized center frequency
-            - start/stop: temporal bounds within frame
-        - categories: (optional) signal class definitions
+                instances_split.json  # COCO-styled format annotations
 
     Methods:
         write(batch): Process a batch of IQ frames and their annotations
@@ -143,16 +127,21 @@ class RFCOCODatasetWriter(DatasetWriter):
         exists(): Check if dataset already exists at target location
     """
 
-    def __init__(self, path: str = ".", storage: Optional[StorageBackend] = None):
+    def __init__(self,
+                 path: str,
+                 split: Literal["train", "val"],
+                 storage: Optional[StorageBackend] = None):
         self.path = Path(path)  # base path (bucket like function)
         self.storage = storage or FilesystemBackend()
         self.storage.set_base_path(self.path)
+
         self.dataset_name = Path(self.path.name)
-        self.data_dir = Path("data")
+        self.split = split
+        self.split_dir = Path(self.split)
         self.annot_dir = Path("annotations")
 
         # Create directories
-        self.storage.create_dir(self.data_dir)
+        self.storage.create_dir(Path(self.split))
         self.storage.create_dir(self.annot_dir)
 
         # Initialize COCO annotation structure.
@@ -172,7 +161,7 @@ class RFCOCODatasetWriter(DatasetWriter):
         Returns:
             bool: True if the annotation file exists, False otherwise.
         """
-        return self.storage.exists(str(self.annot_dir / f"instances_{self.dataset_name}.json"))
+        return self.storage.exists(str(self.annot_dir / f"instances_{self.split}.json"))
 
     def write(self, batch):
         """
@@ -201,7 +190,7 @@ class RFCOCODatasetWriter(DatasetWriter):
         for data, annotations in zip(datas, annots):
             # Save data as .npy file
             filename = f"iq_{self.iq_frame_id}.npy"
-            data_path = self.data_dir / filename
+            data_path = self.split_dir / filename
             self._save_array(data, data_path)
 
             # Create data metadata entry
@@ -224,21 +213,21 @@ class RFCOCODatasetWriter(DatasetWriter):
 
     def write_annotations(self):
         """
-        Write RFCOCO format annotations dictionary to a JSON file.
+        Write COCO format annotations to a JSON file.
 
-        The annotations are written to a file named 'instances_{dataset_name}.json' in the
-        annotations directory specified during class initialization.
-
-        The method uses the internal annotations dictionary (self.annotations_dict) which
-        should be populated before calling this method.
+        The method saves the dictionary of annotations in COCO format to a JSON file
+        in the annotations directory. The filename follows the pattern 'instances_{split}.json'
+        where split is the dataset split (e.g., 'train', 'val', etc.).
 
         Returns:
-            None. The method writes to a file and prints a confirmation message.
-        """
-        annotation_file = os.path.join(
-            self.annot_dir, f"instances_{self.dataset_name}.json")
+            None
 
-        self._save_annotations(self.annotations_dict, annotation_file)
+        Raises:
+            IOError: If there is an error writing the annotations file.
+        """
+        annotation_path = self.annot_dir / f"instances_{self.split}.json"
+
+        self._save_annotations(self.annotations_dict, annotation_path)
 
     def _handle_narrowband_annotations(self, annotation: Tuple, num_samples: int):
         """
@@ -358,11 +347,11 @@ class DatasetCreator:
         self,
         path: str,
         loader: DatasetLoader,
-        writer: Optional[DatasetWriter] = None,
+        writer: DatasetWriter,
     ) -> None:
-        self.loader = loader
-        self.writer = writer or RFCOCODatasetWriter(path)
         self.path = path
+        self.loader = loader
+        self.writer = writer
 
     def create(self):
         """Creates the dataset by iterating over the data loader and writing batches.

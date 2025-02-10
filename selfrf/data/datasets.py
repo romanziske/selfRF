@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 from torch.utils.data import Dataset
 
 from torchsig.utils.types import Signal, create_signal_data
@@ -18,17 +18,20 @@ class RFCOCODataset(Dataset):
 
     Directory structure:
         root/
-            data/
+            train/
                 iq_0.npy  # IQ samples in complex64 format
                 iq_1.npy
                 ...
+            val/
             annotations/
-                instances_dataset_name.json  # COCO-styled format annotations
+                instances_train.json  # COCO-styled format annotations
+                instances_val.json
     """
 
     def __init__(
         self,
         root: str,
+        split: Literal["train", "val"],
         transform: Optional[Transform] = None,
         target_transform: Optional[Transform] = None,
     ) -> None:
@@ -39,6 +42,8 @@ class RFCOCODataset(Dataset):
         """
         self.root = Path(root)
         self.dataset_name = self.root.name
+        self.split = split
+
         self.transform = transform or Identity()
         self.target_transform = target_transform or Identity()
 
@@ -60,11 +65,11 @@ class RFCOCODataset(Dataset):
 
     def _annotations_json_path(self) -> Path:
         """Returns the path to the COCO-style annotations JSON file."""
-        return self.root / "annotations" / f"instances_{self.dataset_name}.json"
+        return self.root / "annotations" / f"instances_{self.split}.json"
 
     def _data_dir(self) -> Path:
         """Returns the path to the data directory."""
-        return self.root / "data"
+        return self.root / self.split
 
     def __len__(self) -> int:
         """Returns the total number of IQ frames in the dataset."""

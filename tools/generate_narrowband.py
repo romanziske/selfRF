@@ -8,14 +8,14 @@ import click
 import os
 
 from selfrf.data.data_generators import DatasetLoader, DatasetCreator, RFCOCODatasetWriter
-from selfrf.data.storage import MinioBackend
+from selfrf.data.storage import MinioBackend, FilesystemBackend
 load_dotenv()
 
 
 def get_backend(to_bucket: bool = False):
     if not to_bucket:
-        return None
-    print(bool(os.getenv("MINIO_SECURE", False)))
+        return FilesystemBackend()
+
     return MinioBackend(
         client=Minio(
             endpoint=os.getenv("MINIO_ENDPOINT"),
@@ -34,6 +34,9 @@ def generate(root: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
         num_iq_samples = config.num_iq_samples if num_iq_samples_override <= 0 else num_iq_samples_override
         print(
             f'batch_size -> {batch_size} num_samples -> {num_samples}, config -> {config}')
+
+        split = "train" if "train" in config.name else "val"
+        dataset_name = config.name.removesuffix(f"_{split}")
 
         ds = ModulationsDataset(
             level=config.level,
@@ -58,8 +61,9 @@ def generate(root: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
             ),
             loader=dataset_loader,
             writer=RFCOCODatasetWriter(
-                path=os.path.join(root, config.name),
+                path=os.path.join(root, dataset_name),
                 storage=get_backend(to_bucket=to_bucket),
+                split=split,
             )
         )
 

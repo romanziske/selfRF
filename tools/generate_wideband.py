@@ -10,7 +10,7 @@ import os
 
 
 from selfrf.data.data_generators import DatasetLoader, DatasetCreator, RFCOCODatasetWriter
-from selfrf.data.storage import MinioBackend
+from selfrf.data.storage import MinioBackend, FilesystemBackend
 
 modulation_list = torchsig_signals.class_list
 load_dotenv()
@@ -18,7 +18,7 @@ load_dotenv()
 
 def get_backend(to_bucket: bool = False):
     if not to_bucket:
-        return None
+        return FilesystemBackend()
 
     return MinioBackend(
         client=Minio(
@@ -49,6 +49,9 @@ def generate(root: str,
         print(
             f'batch_size -> {batch_size} num_samples -> {num_samples}, config -> {config}')
 
+        split = "train" if "train" in config.name else "val"
+        dataset_name = config.name.removesuffix(f"_{split}")
+
         wideband_ds = WidebandModulationsDataset(
             level=config.level,
             num_iq_samples=num_iq_samples,
@@ -69,12 +72,13 @@ def generate(root: str,
 
         creator = DatasetCreator(
             path=os.path.join(
-                root, config.name
+                root, dataset_name
             ),
             loader=dataset_loader,
             writer=RFCOCODatasetWriter(
-                path=os.path.join(root, config.name),
+                path=os.path.join(root, dataset_name),
                 storage=get_backend(to_bucket=to_bucket),
+                split=split,
             )
         )
 
