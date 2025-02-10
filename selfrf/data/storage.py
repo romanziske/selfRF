@@ -95,19 +95,25 @@ class MinioBackend(StorageBackend):
         length = data.tell()
         data.seek(0)
 
+        path = self._normalize_path(self.base_path / path)
         self.client.put_object(
             bucket_name=self.bucket,
-            object_name=str(self.base_path / path),
+            object_name=path,
             data=data,
             length=length
         )
 
     def exists(self, path: Path) -> bool:
         try:
-            self.client.stat_object(self.bucket, str(self.base_path / path))
+            path = self._normalize_path(self.base_path / path)
+            self.client.stat_object(self.bucket, path)
             return True
         except minio.error.S3Error:
             return False
+
+    def _normalize_path(self, path: Union[str, Path]) -> str:
+        """Convert Windows or Unix path to S3-style object key"""
+        return str(self.base_path / path).replace('\\', '/')
 
 
 class FilesystemBackend(StorageBackend):
