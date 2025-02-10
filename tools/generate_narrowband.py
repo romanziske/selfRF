@@ -26,7 +26,7 @@ def get_backend(to_bucket: bool = False):
             access_key=os.getenv("MINIO_ACCESS_KEY"),
             secret_key=os.getenv("MINIO_SECRET_KEY"),
             secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
-            cert_check=os.getenv("MINIO_SECURE", "true").lower() == "true",
+            cert_check=os.getenv("MINIO_CERT_CHECK", "true").lower() == "true",
         ),
         bucket=os.getenv("MINIO_BUCKET")
     )
