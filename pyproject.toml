@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "selfRF"
+description = "Library for Self-Supervised Learning for Radio Frequency Signals"
+authors = [
+    {name = "TorchSig Team"},
+]
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["signal processing", "machine learning"]
+dependencies = [
+    "torchsig @ git+https://github.com/TorchDSP/torchsig.git"
+]
+dynamic = ["version"]
+
+[tool.setuptools.dynamic]
+version = {attr = "selfrf.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["selfrf*"]
+exclude = ["configs*", "datasets*", "tools*"]
+namespaces = false

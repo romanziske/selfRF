@@ -1,0 +1,122 @@
+
+import json
+from pathlib import Path
+import numpy as np
+from typing import Dict, List, Optional, Tuple, Union
+from torch.utils.data import Dataset
+
+from torchsig.utils.types import Signal, create_signal_data
+from torchsig.transforms import Transform, Identity
+
+
+class RFCOCODataset(Dataset):
+    """Base class for RF signal datasets in COCO format.
+
+    Supports:
+    - Narrowband: Single annotation per IQ frame (classification)
+    - Wideband: Multiple annotations per IQ frame (detection)
+
+    Directory structure:
+        root/
+            data/
+                iq_0.npy  # IQ samples in complex64 format
+                iq_1.npy
+                ...
+            annotations/
+                instances_dataset_name.json  # COCO-styled format annotations
+    """
+
+    def __init__(
+        self,
+        root: str,
+        transform: Optional[Transform] = None,
+        target_transform: Optional[Transform] = None,
+    ) -> None:
+        """
+        Args:
+            root: Dataset root directory
+            transform: Optional transform to be applied on IQ samples
+        """
+        self.root = Path(root)
+        self.dataset_name = self.root.name
+        self.transform = transform or Identity()
+        self.target_transform = target_transform or Identity()
+
+        with open(self._annotations_json_path(), 'r') as f:
+            self.coco = json.load(f)
+
+        # map iq frame id to annotations
+        self.mapping: Dict[int, List] = {}
+        for ann in self.coco['annotations']:
+            iq_frame_id = ann['iq_frame_id']
+
+            if iq_frame_id not in self.mapping:
+                self.mapping[iq_frame_id] = []
+
+            self.mapping[iq_frame_id].append(ann)
+
+        # Get all IQ frame info
+        self.iq_frames = self.coco['iq_frames']
+
+    def _annotations_json_path(self) -> Path:
+        """Returns the path to the COCO-style annotations JSON file."""
+        return self.root / "annotations" / f"instances_{self.dataset_name}.json"
+
+    def _data_dir(self) -> Path:
+        """Returns the path to the data directory."""
+        return self.root / "data"
+
+    def __len__(self) -> int:
+        """Returns the total number of IQ frames in the dataset."""
+        return len(self.iq_frames)
+
+    def get_data(self, idx: int) -> np.ndarray:
+        """Load IQ samples from .npy file"""
+        frame_info = self.iq_frames[idx]
+        iq_path = self._data_dir() / frame_info['file_name']
+        return np.load(iq_path)
+
+    def get_meta(self, idx: int) -> Union[Dict, List[Dict]]:
+        """Get target annotations for IQ frame"""
+        return self.mapping[idx]
+
+    def get_data_and_meta(self, idx: int) -> Tuple[np.ndarray, Union[Dict, List[Dict]]]:
+        """Get IQ samples and target annotations for IQ frame"""
+        return self.get_data(idx), self.get_meta(idx)
+
+    def apply_target_transfrom(self, view: Dict) -> Tuple[np.ndarray, List[Dict]]:
+        """Process a single view of the signal data"""
+        # apply target transform, to get target in desired format
+        target = self.target_transform(view["metadata"])
+        samples = view["data"]["samples"]
+        return samples, target
+
+    def __getitem__(self, idx: int) -> Tuple[Union[np.ndarray, List[np.ndarray]], Dict]:
+        """Get item with support for multi-view transforms
+
+        Returns:
+            Tuple containing:
+                - Single np.ndarray or List[np.ndarray] for multi-view
+                - Dict Target 
+        """
+        iq_data, meta = self.get_data_and_meta(idx)
+
+        # Create Signal object
+        signal = Signal(
+            data=create_signal_data(samples=iq_data),
+            metadata=meta,
+        )
+
+        # Apply transform on data and meta
+        transformed = self.transform(signal)
+
+        if isinstance(transformed, list):
+            samples, targets = zip(*[self.apply_target_transfrom(view)
+                                   for view in transformed])
+
+            # Assume all views have the same target,
+            # as multi-view transforms are only used for self-supervised learning
+            return list(samples), targets[0]
+
+        samples, target = self.apply_target_transfrom(transformed)
+        return samples, target

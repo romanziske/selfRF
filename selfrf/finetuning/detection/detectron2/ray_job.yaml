@@ -1,0 +1,22 @@
+#py_modules:
+#  - "torchsig-0.6.0-py3-none-any.whl" # Installs the current directory as a package
+#  - "detectron2-0.6-cp311-cp311-linux_x86_64.whl"
+pip:
+  - "lightly"
+  - "httpcore==0.15"
+  - "wandb"
+  - "lightning"
+  - "timm"
+  - "minio"
+working_dir: "." # Makes sure Ray can access local files
+excludes:
+  - "scripts"
+  - "docs"
+  - ".git"
+  - "examples"
+  - "gr-spectrumdetect"
+env_vars:
+  CUDA_VISIBLE_DEVICES: "1"
+  MINIO_URL: minio.bosys.otn.m.dasa.de
+  MINIO_ACCESS_KEY: udm3CeRwxv0VUpZ2Bvyl
+  MINIO_SECRET_ACCESS_KEY: XF2G17C0WBWOY5BG54WxT50WNPO5WK8STEo8T4jp
