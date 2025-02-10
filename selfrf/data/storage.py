@@ -113,7 +113,7 @@ class MinioBackend(StorageBackend):
 
     def _normalize_path(self, path: Union[str, Path]) -> str:
         """Convert Windows or Unix path to S3-style object key"""
-        return str(self.base_path / path).replace('\\', '/')
+        return str(path).replace('\\', '/')
 
 
 class FilesystemBackend(StorageBackend):
