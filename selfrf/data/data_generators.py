@@ -1,9 +1,10 @@
+import io
 import os
 from pathlib import Path
 import platform
 import random
 from functools import partial
-from typing import List, Optional, Callable, Tuple
+from typing import List, Optional, Callable, Tuple, Dict
 import json
 
 import tqdm
@@ -15,6 +16,8 @@ from torchsig.utils.writer import DatasetWriter
 from torchsig.utils.dataset import SignalDataset
 from torchsig.utils.types import ModulatedRFMetadata
 from torchsig.datasets.signal_classes import torchsig_signals
+
+from .storage import FilesystemBackend, StorageBackend
 
 
 class DatasetLoader:
@@ -93,7 +96,7 @@ class DatasetLoader:
         return iter(self.loader)
 
 
-class COCODatasetWriter(DatasetWriter):
+class RFCOCODatasetWriter(DatasetWriter):
     """
     Writer to store a COCO-style dataset for RF signals.
 
@@ -131,15 +134,17 @@ class COCODatasetWriter(DatasetWriter):
         exists(): Check if dataset already exists at target location
     """
 
-    def __init__(self, path: str):
-        self.path = Path(path)
-        self.dataset_name = self.path.name
-        self.data_dir = os.path.join(self.path, "data")
-        self.annot_dir = os.path.join(self.path, "annotations")
+    def __init__(self, path: str = ".", storage: Optional[StorageBackend] = None):
+        self.path = Path(path)  # base path (bucket like function)
+        self.storage = storage or FilesystemBackend()
+        self.storage.set_base_path(self.path)
+        self.dataset_name = Path(self.path.name)
+        self.data_dir = Path("data")
+        self.annot_dir = Path("annotations")
 
         # Create directories
-        os.makedirs(self.data_dir, exist_ok=True)
-        os.makedirs(self.annot_dir, exist_ok=True)
+        self.storage.create_dir(self.data_dir)
+        self.storage.create_dir(self.annot_dir)
 
         # Initialize COCO annotation structure.
         self.annotations_dict = {
@@ -158,7 +163,7 @@ class COCODatasetWriter(DatasetWriter):
         Returns:
             bool: True if the annotation file exists, False otherwise.
         """
-        return os.path.exists(os.path.join(self.annot_dir, f"instances_{self.dataset_name}.json"))
+        return self.storage.exists(str(self.annot_dir / f"instances_{self.dataset_name}.json"))
 
     def write(self, batch):
         """
@@ -187,8 +192,8 @@ class COCODatasetWriter(DatasetWriter):
         for data, annotations in zip(datas, annots):
             # Save data as .npy file
             filename = f"iq_{self.iq_frame_id}.npy"
-            data_path = os.path.join(self.data_dir, filename)
-            np.save(data_path, data)
+            data_path = self.data_dir / filename
+            self._save_array(data, data_path)
 
             # Create data metadata entry
             data_entry = {
@@ -210,7 +215,7 @@ class COCODatasetWriter(DatasetWriter):
 
     def write_annotations(self):
         """
-        Write COCO format annotations dictionary to a JSON file.
+        Write RFCOCO format annotations dictionary to a JSON file.
 
         The annotations are written to a file named 'instances_{dataset_name}.json' in the
         annotations directory specified during class initialization.
@@ -223,11 +228,31 @@ class COCODatasetWriter(DatasetWriter):
         """
         annotation_file = os.path.join(
             self.annot_dir, f"instances_{self.dataset_name}.json")
-        with open(annotation_file, "w") as f:
-            json.dump(self.annotations_dict, f, indent=2)
-        print(f"Annotations written to {annotation_file}")
+
+        self._save_annotations(self.annotations_dict, annotation_file)
 
     def _handle_narrowband_annotations(self, annotation: Tuple, num_samples: int):
+        """
+        Handles narrowband signal annotations by creating metadata for modulated RF signals.
+
+        Args:
+            annotation (Tuple): A tuple containing modulation class index and SNR value.
+            num_samples (int): Number of samples in the signal.
+
+        Details:
+            Creates a ModulatedRFMetadata object with fixed parameters for narrowband signals:
+            - Sample rate: 0.0
+            - Complex signal: True 
+            - Frequency range: [-0.25, 0.25]
+            - Center frequency: 0.0
+            - Bandwidth: 0.5
+            - Duration: 1.0 second
+
+            Adds unique identifiers and appends the annotation to internal annotations dictionary.
+
+        Note:
+            This method modifies the instance's annotations_dict and increments annotation_id counter.
+        """
         modulation_class, snr = annotation
         annotation = ModulatedRFMetadata(
             sample_rate=0.0,
@@ -252,12 +277,60 @@ class COCODatasetWriter(DatasetWriter):
         self.annotations_dict["annotations"].append(annotation)
         self.annotation_id += 1
 
-    def _handle_wideband_annotations(self, annotations: List):
+    def _handle_wideband_annotations(self, annotations: List[Dict]):
+        """
+        Process and store wideband annotations with unique identifiers.
+
+        This method takes a list of annotation dictionaries and updates each annotation
+        with a unique annotation ID and IQ frame ID. The processed annotations are then
+        stored in the annotations dictionary.
+
+        Args:
+            annotations (List[Dict]): List of annotation dictionaries to process
+
+        Notes:
+            - Modifies the input annotations by adding 'id' and 'iq_frame_id' fields
+            - Increments self.annotation_id counter for each processed annotation
+            - Appends processed annotations to self.annotations_dict["annotations"]
+        """
         for annotation in annotations:
             annotation["id"] = self.annotation_id
             annotation["iq_frame_id"] = self.iq_frame_id
             self.annotations_dict["annotations"].append(annotation)
             self.annotation_id += 1
+
+    def _save_array(self, array: np.ndarray, path: Path):
+        """
+        Save a numpy array to storage using a bytes buffer.
+
+        Args:
+            array (np.ndarray): The numpy array to be saved.
+            path (Path): The path where the array will be stored.
+
+        Note:
+            This method first converts the array to bytes using BytesIO buffer,
+            then saves it to the specified storage location.
+        """
+        # Save numpy array to bytes
+        buffer = io.BytesIO()
+        np.save(buffer, array)
+        buffer.seek(0)
+        self.storage.put_object(buffer, path)
+
+    def _save_annotations(self, annotations: dict, path: Path):
+        """Save annotation data to storage.
+
+        This method serializes annotation dictionary to JSON and saves it as bytes to the specified path
+        using the storage interface.
+
+        Args:
+            annotations (dict): Dictionary containing annotation data to save
+            path (Path): Path where to save the annotations
+        """
+        # Save json to bytes
+        data = json.dumps(annotations).encode()
+
+        self.storage.put_object(data, path)
 
 
 class DatasetCreator:
@@ -279,7 +352,7 @@ class DatasetCreator:
         writer: Optional[DatasetWriter] = None,
     ) -> None:
         self.loader = loader
-        self.writer = writer or COCODatasetWriter(path)
+        self.writer = writer or RFCOCODatasetWriter(path)
         self.path = path
 
     def create(self):

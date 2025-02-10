@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+from minio import Minio
 from torchsig.datasets.modulations import ModulationsDataset
 from torchsig.datasets import conf
 from torchsig.utils.dataset import collate_fn
@@ -5,10 +7,28 @@ from typing import List
 import click
 import os
 
-from selfrf.data.data_generators import DatasetLoader, DatasetCreator
+from selfrf.data.data_generators import DatasetLoader, DatasetCreator, RFCOCODatasetWriter
+from selfrf.data.storage import MinioBackend
+load_dotenv()
 
 
-def generate(path: str, configs: List[conf.NarrowbandConfig], num_workers: int, num_samples_override: int, num_iq_samples_override: int = -1, batch_size: int = 32):
+def get_backend(to_bucket: bool = False):
+    if not to_bucket:
+        return None
+    print(bool(os.getenv("MINIO_SECURE", False)))
+    return MinioBackend(
+        client=Minio(
+            endpoint=os.getenv("MINIO_ENDPOINT"),
+            access_key=os.getenv("MINIO_ACCESS_KEY"),
+            secret_key=os.getenv("MINIO_SECRET_KEY"),
+            secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
+            cert_check=os.getenv("MINIO_SECURE", "true").lower() == "true",
+        ),
+        bucket=os.getenv("MINIO_BUCKET")
+    )
+
+
+def generate(root: str, configs: List[conf.NarrowbandConfig], num_workers: int, num_samples_override: int, num_iq_samples_override: int = -1, batch_size: int = 32, to_bucket: bool = False):
     for config in configs:
         num_samples = config.num_samples if num_samples_override <= 0 else num_samples_override
         num_iq_samples = config.num_iq_samples if num_iq_samples_override <= 0 else num_iq_samples_override
@@ -33,8 +53,14 @@ def generate(path: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
         )
 
         creator = DatasetCreator(
-            path="{}".format(os.path.join(path, config.name)),
+            path=os.path.join(
+                root, config.name
+            ),
             loader=dataset_loader,
+            writer=RFCOCODatasetWriter(
+                path=os.path.join(root, config.name),
+                storage=get_backend(to_bucket=to_bucket),
+            )
         )
 
         creator.create()
@@ -49,7 +75,8 @@ def generate(path: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
 @click.option("--num-samples", default=-1, help="Override for number of dataset samples.")
 @click.option("--num-workers", "num_workers", default=os.cpu_count() // 2, help="Define number of workers for both DatasetLoader and DatasetCreator")
 @click.option("--impaired", is_flag=True, default=False, help="Generate impaired dataset. Ignored if --all=True (default)")
-def main(root: str, all: bool, qa: bool, impaired: bool, num_workers: int, num_samples: int, num_iq_samples: int, batch_size: int):
+@ click.option("--to-bucket", is_flag=True, default=False, help="Upload to Minio bucket.")
+def main(root: str, all: bool, qa: bool, impaired: bool, num_workers: int, num_samples: int, num_iq_samples: int, batch_size: int, to_bucket: bool):
     os.makedirs(root, exist_ok=True)
 
     configs = [
@@ -67,20 +94,20 @@ def main(root: str, all: bool, qa: bool, impaired: bool, num_workers: int, num_s
     impaired_configs.extend(configs[2:])
     impaired_configs.extend(configs[-2:])
     if all:
-        generate(root, configs[:4], num_workers,
-                 num_samples, num_iq_samples, batch_size)
+        generate(root, configs, num_workers,
+                 num_samples, num_iq_samples, batch_size, to_bucket)
 
     elif qa:
-        generate(root, configs[4:], num_workers,
-                 num_samples, num_iq_samples, batch_size)
+        generate(root, configs[-4:], num_workers,
+                 num_samples, num_iq_samples, batch_size, to_bucket)
 
     elif impaired:
         generate(root, impaired_configs, num_workers,
-                 num_samples, num_iq_samples, batch_size)
+                 num_samples, num_iq_samples, batch_size, to_bucket)
 
     else:
         generate(root, configs[:2], num_workers,
-                 num_samples, num_iq_samples, batch_size)
+                 num_samples, num_iq_samples, batch_size, to_bucket)
 
 
 if __name__ == "__main__":
