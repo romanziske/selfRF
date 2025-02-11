@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 
 from torchsig.transforms import Transform, Identity
 from torchsig.utils.dataset import collate_fn as collate_fn_default
+from tqdm import tqdm
 
 
 from selfrf.data.datasets import RFCOCODataset
@@ -90,39 +91,13 @@ class TorchsigNarrowbandRFCOCODataModule(RFCOCODataModule):
 
     def prepare_data(self):
         """Download RF COCO dataset from Minio"""
-        print("Downloading dataset from Minio")
 
         if self.download:
-            dataset_path = self.root / self.dataset_name
-            print(f"Downloading dataset to {dataset_path}")
-            dataset_path.mkdir(parents=True, exist_ok=True)
-
-            # Download annotation files
-            for split in ["train", "val"]:
-                annot_file = f"instances_{split}.json"
-                annot_file_local_path = dataset_path / "annotations" / annot_file
-                annot_file_local_path.parent.mkdir(parents=True, exist_ok=True)
-
-                self.minio.fget_object(
-                    self.bucket,
-                    f"{dataset_path}/annotations/{annot_file}",
-                    str(annot_file_local_path)
-                )
-
-                # Load annotations to get IQ frame filenames
-                annotations = json.loads(annot_file_local_path.read_text())
-
-                # Download IQ data files
-                for frame in annotations["iq_frames"]:
-                    iq_local_path = dataset_path / \
-                        split / str(frame["file_name"])
-                    iq_local_path.parent.mkdir(parents=True, exist_ok=True)
-
-                    self.minio.fget_object(
-                        self.bucket,
-                        f"{dataset_path}/{split}/{frame['file_name']}",
-                        str(iq_local_path)
-                    )
+            _download(
+                root=self.root,
+                bucket=self.bucket,
+                dataset_name=self.dataset_name,
+                minio=self.minio,)
         else:
             raise NotImplementedError(
                 "prepare_data not implemented for ahoc dataset generation")
@@ -169,34 +144,11 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
         """Download RF COCO dataset from Minio"""
 
         if self.download:
-            dataset_path = self.root / self.dataset_name
-            dataset_path.mkdir(parents=True, exist_ok=True)
-
-            # Download annotation files
-            for split in ["train", "val"]:
-                annot_file = f"instances_{split}.json"
-                annot_file_local_path = dataset_path / "annotations" / annot_file
-                annot_file_local_path.parent.mkdir(parents=True, exist_ok=True)
-
-                self.minio.fget_object(
-                    self.bucket,
-                    f"{self.dataset_name}/annotations/{annot_file}",
-                    str(annot_file_local_path)
-                )
-
-                # Load annotations to get IQ frame filenames
-                annotations = json.loads(annot_file_local_path.read_text())
-
-                # Download IQ data files
-                for frame in annotations["iq_frames"]:
-                    iq_local_path = dataset_path / str(frame["file_name"])
-                    iq_local_path.parent.mkdir(parents=True, exist_ok=True)
-
-                    self.minio.fget_object(
-                        self.bucket,
-                        f"{self.dataset_name}/{frame['file_name']}",
-                        str(iq_local_path)
-                    )
+            _download(
+                root=self.root,
+                bucket=self.bucket,
+                dataset_name=self.dataset_name,
+                minio=self.minio,)
         else:
             raise NotImplementedError(
                 "prepare_data not implemented for ahoc dataset generation")
@@ -222,3 +174,44 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
         else:
             raise NotImplementedError(
                 "setup not implemented for stage: {stage}")
+
+
+def _download(
+        root: Path,
+        bucket: str,
+        dataset_name: str,
+        minio: Minio,
+):
+    dataset_path = root / dataset_name
+    print(f"Downloading dataset to {dataset_path}")
+    dataset_path.mkdir(parents=True, exist_ok=True)
+
+    # Download annotation files with progress bar
+    for split in tqdm(["train", "val"], desc="Downloading splits"):
+
+        annot_file = f"instances_{split}.json"
+        annot_file_local_path = dataset_path / "annotations" / annot_file
+        annot_file_local_path.parent.mkdir(parents=True, exist_ok=True)
+
+        minio.fget_object(
+            bucket,
+            f"{dataset_path}/annotations/{annot_file}",
+            str(annot_file_local_path)
+        )
+
+        annotations = json.loads(annot_file_local_path.read_text())
+
+        # Download IQ files with nested progress bar
+        for frame in tqdm(
+            annotations["iq_frames"],
+            desc=f"Downloading {split} IQ frames",
+            leave=False
+        ):
+            iq_local_path = dataset_path / split / str(frame["file_name"])
+            iq_local_path.parent.mkdir(parents=True, exist_ok=True)
+
+            minio.fget_object(
+                bucket,
+                f"{dataset_path}/{split}/{frame['file_name']}",
+                str(iq_local_path)
+            )
