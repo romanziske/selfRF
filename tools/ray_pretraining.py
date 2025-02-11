@@ -1,3 +1,4 @@
+import numpy
 import ray
 from ray.train.torch import TorchTrainer
 from ray.air import RunConfig, ScalingConfig
@@ -9,6 +10,9 @@ from pretraining import train
 def train_on_ray(config: TrainingConfig):
 
     ray.init()
+    print("###############################################")
+    print(numpy.__version__)
+    print("###############################################")
 
     trainer = TorchTrainer(
         train_loop_per_worker=train,
@@ -18,7 +22,7 @@ def train_on_ray(config: TrainingConfig):
         ),
         scaling_config=ScalingConfig(
             num_workers=1,
-            use_gpu=False,
+            use_gpu=True,
         )
     )
 
@@ -27,6 +31,6 @@ def train_on_ray(config: TrainingConfig):
 
 
 if __name__ == "__main__":
-    config = parse_training_config("TrainingConfig")
+    config = parse_training_config()
     print_config(config)
     train_on_ray(config)

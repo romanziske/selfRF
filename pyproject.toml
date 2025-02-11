@@ -17,9 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 keywords = ["signal processing", "machine learning"]
-dependencies = [
-    "torchsig @ git+https://github.com/TorchDSP/torchsig.git"
-]
+dependencies = []
 dynamic = ["version"]
 
 [tool.setuptools.dynamic]

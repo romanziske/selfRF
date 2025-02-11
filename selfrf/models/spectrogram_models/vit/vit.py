@@ -1,8 +1,10 @@
 
 from typing import Dict, Union
-from detectron2.modeling.backbone.vit import ViT
 import torch
 import torch.nn as nn
+from detectron2.modeling.backbone.vit import ViT
+
+__all__ = ["build_vit"]
 
 
 class ViTWrapper(nn.Module):
