@@ -4,6 +4,7 @@ from typing import List
 import click
 import os
 
+import numpy as np
 from torchsig.datasets.modulations import ModulationsDataset
 from torchsig.datasets import conf
 from torchsig.utils.dataset import collate_fn
@@ -11,6 +12,7 @@ from torchsig.datasets.signal_classes import torchsig_signals
 
 from selfrf.data.data_generators import DatasetLoader, DatasetCreator, RFCOCODatasetWriter
 from selfrf.data.storage import MinioBackend, FilesystemBackend
+from selfrf.transforms.extra.transforms import ToDtype
 load_dotenv()
 
 modulation_list = torchsig_signals.class_list
@@ -57,6 +59,7 @@ def generate(root: str, configs: List[conf.NarrowbandConfig], num_workers: int, 
             use_class_idx=config.use_class_idx,
             include_snr=config.include_snr,
             eb_no=config.eb_no,
+            transform=ToDtype(dtype=np.complex64),
         )
 
         dataset_loader = DatasetLoader(

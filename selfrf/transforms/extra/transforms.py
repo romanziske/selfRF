@@ -1,6 +1,7 @@
 
-from typing import Any, Sequence
+from typing import Any, Sequence, Tuple, Union
 from copy import deepcopy
+import numpy as np
 import torch
 from torchsig.utils.types import Signal
 from torchsig.transforms import Transform, Compose, SignalTransform
@@ -11,6 +12,7 @@ from . import functional as F
 __all__ = [
     "MultiViewTransform",
     "AmplitudeScale",
+    "ToDtype",
     "ToTensor",
     "ToSpectrogramTensor"
 ]
@@ -74,6 +76,40 @@ class AmplitudeScale(SignalTransform):
         scale_value = params[0]
         signal["data"]["samples"] = F.amplitude_scale(
             signal["data"]["samples"], scale_value)
+        return signal
+
+
+class ToDtype(SignalTransform):
+    """
+    Transform that converts the 'samples' of a signal (a NumPy ndarray) to a specific dtype.
+    """
+
+    def __init__(
+            self,
+            dtype: np.dtype,
+            **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.dtype = dtype
+        self.string = f"{self.__class__.__name__}(dtype={dtype})"
+
+    def parameters(self) -> tuple:
+        """
+        Returns:
+            A tuple containing the chosen dtype.
+        """
+        return (self.dtype(),)
+
+    def transform_data(self, signal: dict, params: tuple) -> dict:
+        """
+        Converts the 'samples' in signal["data"] to the desired dtype.
+
+        Returns:
+            The modified signal dictionary.
+        """
+        chosen_dtype = params[0]
+        # Use astype to convert the NumPy array to the new dtype.
+        signal["data"]["samples"] = signal["data"]["samples"].astype(
+            chosen_dtype)
         return signal
 
 

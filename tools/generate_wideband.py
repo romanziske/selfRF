@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from minio import Minio
+import numpy as np
 from torchsig.utils.dataset import collate_fn
 from typing import List
 import click
@@ -11,6 +12,7 @@ from torchsig.datasets.signal_classes import torchsig_signals
 
 from selfrf.data.data_generators import DatasetLoader, DatasetCreator, RFCOCODatasetWriter
 from selfrf.data.storage import MinioBackend, FilesystemBackend
+from selfrf.transforms.extra.transforms import ToDtype
 
 modulation_list = torchsig_signals.class_list
 load_dotenv()
@@ -66,7 +68,8 @@ def generate(root: str,
             num_samples=num_samples,
             modulation_list=modulation_list,
             seed=config.seed,
-            overlap_prob=config.overlap_prob
+            overlap_prob=config.overlap_prob,
+            transform=ToDtype(dtype=np.complex64),
         )
 
         dataset_loader = DatasetLoader(
