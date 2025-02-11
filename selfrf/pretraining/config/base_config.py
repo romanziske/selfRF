@@ -8,8 +8,6 @@ from selfrf.pretraining.utils.enums import BackboneType, DatasetType
 # Default values as constants
 DEFAULT_DATASET = DatasetType.TORCHSIG_NARROWBAND
 DEFAULT_ROOT = './datasets'
-DEFAULT_QA = True
-DEFAULT_IMPAIRED = False
 DEFAULT_FAMILY = False
 DEFAULT_SPECTROGRAM = False
 DEFAULT_NFFT = 512
@@ -25,8 +23,6 @@ DEFAULT_TO_FLOAT_32 = False
 class BaseConfig:
     dataset: DatasetType = DEFAULT_DATASET
     root: str = DEFAULT_ROOT
-    qa: bool = DEFAULT_QA
-    impaired: bool = DEFAULT_IMPAIRED
     family: bool = DEFAULT_FAMILY
 
     spectrogram: bool = DEFAULT_SPECTROGRAM
@@ -53,16 +49,6 @@ def add_base_config_args(parser: argparse.ArgumentParser) -> None:
         '--root',
         type=str,
         default=DEFAULT_ROOT,
-    )
-    parser.add_argument(
-        '--qa',
-        type=lambda x: x.lower() == 'true',
-        default=DEFAULT_QA,
-    )
-    parser.add_argument(
-        '--impaired',
-        type=lambda x: x.lower() == 'true',
-        default=DEFAULT_IMPAIRED,
     )
     parser.add_argument(
         '--family',

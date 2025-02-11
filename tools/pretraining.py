@@ -1,9 +1,10 @@
 import os
+from dotenv import load_dotenv
 from lightning.pytorch import Trainer
 from lightning.pytorch.loggers import TensorBoardLogger
 
 from selfrf.pretraining.config import TrainingConfig, parse_training_config, print_config
-from selfrf.pretraining.factories import build_dataset, build_ssl_model, build_ssl_model
+from selfrf.pretraining.factories import build_dataset, build_ssl_model
 from selfrf.pretraining.utils.callbacks import ModelAndBackboneCheckpoint
 
 
@@ -51,6 +52,7 @@ def train(config: TrainingConfig):
 
 
 if __name__ == '__main__':
+    load_dotenv()
     config = parse_training_config()
     print_config(config)
     train(config)

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Dict, Callable, Union
 import numpy as np
-import torch
 
 from torchsig.transforms import (
     ComplexTo2D,
