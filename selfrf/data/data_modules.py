@@ -2,6 +2,7 @@ import json
 import os
 from typing import Callable, Optional
 from pathlib import Path
+from dotenv import load_dotenv
 import lightning.pytorch as pl
 from minio import Minio
 from torch.utils.data import DataLoader
@@ -77,6 +78,8 @@ class TorchsigNarrowbandRFCOCODataModule(RFCOCODataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        load_dotenv()
+
         self.dataset_name = "narrowband_impaired"
         self.bucket = "iqdm-ai"
         self.download = True
@@ -128,6 +131,8 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        load_dotenv()
+
         self.dataset_name = "wideband_impaired"
         self.bucket = "iqdm-ai"
         self.download = True
@@ -144,6 +149,7 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
         """Download RF COCO dataset from Minio"""
 
         if self.download:
+            return
             _download(
                 root=self.root,
                 bucket=self.bucket,
@@ -187,7 +193,7 @@ def _download(
     dataset_path.mkdir(parents=True, exist_ok=True)
 
     # Download annotation files with progress bar
-    for split in tqdm(["train", "val"], desc="Downloading splits"):
+    for split in ["train", "val"]:
 
         annot_file = f"instances_{split}.json"
         annot_file_local_path = dataset_path / "annotations" / annot_file

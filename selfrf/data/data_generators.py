@@ -146,9 +146,9 @@ class RFCOCODatasetWriter(DatasetWriter):
 
         # Initialize COCO annotation structure.
         self.annotations_dict = {
-            "iq_frames": [],
+            "categories": self._generate_categories(),
             "annotations": [],
-            "categories": []
+            "iq_frames": [],
         }
 
         self.iq_frame_id = 0
@@ -229,6 +229,16 @@ class RFCOCODatasetWriter(DatasetWriter):
 
         self._save_annotations(self.annotations_dict, annotation_path)
 
+    def _generate_categories(self):
+        return [
+            {
+                "id": i,
+                "name": class_name,
+                "supercategory": "signal"
+            }
+            for i, class_name in enumerate(torchsig_signals().class_list)
+        ]
+
     def _handle_narrowband_annotations(self, annotation: Tuple, num_samples: int):
         """
         Handles narrowband signal annotations by creating metadata for modulated RF signals.
@@ -266,8 +276,9 @@ class RFCOCODatasetWriter(DatasetWriter):
             bits_per_symbol=0.0,
             samples_per_symbol=0.0,
             excess_bandwidth=0.0,
-            class_name=torchsig_signals().class_list[modulation_class],
-            class_index=modulation_class,
+            class_name=self.annotations_dict["categories"][modulation_class]["name"],
+            # a bit verbose as we can just use the index
+            class_index=self.annotations_dict["categories"][modulation_class]["id"],
             snr=snr,
         )
         annotation["id"] = self.annotation_id

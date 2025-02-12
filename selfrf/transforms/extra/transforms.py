@@ -1,5 +1,5 @@
 
-from typing import Any, Sequence, Tuple, Union
+from typing import Any, Literal, Sequence
 from copy import deepcopy
 import numpy as np
 import torch
@@ -11,6 +11,7 @@ from . import functional as F
 
 __all__ = [
     "MultiViewTransform",
+    "SpectrogramImage",
     "AmplitudeScale",
     "ToDtype",
     "ToTensor",
@@ -39,6 +40,37 @@ class MultiViewTransform(Transform):
             data_copy = deepcopy(data)
             views.append(transform(data_copy))
         return views
+
+
+class SpectrogramImage(SignalTransform):
+    """Transforms SignalData to spectrogram image
+
+    Args:
+        None
+
+
+    Example:
+        >>> import torchsig.transforms as ST
+        >>> transform = ST.SpectrogramImage() 
+
+    """
+
+    def __init__(
+        self,
+        normalize_max: Literal[1, 255] = 255,
+    ) -> None:
+        super(SpectrogramImage, self).__init__()
+        self.normalize_max = normalize_max
+        self.string: str = (
+            self.__class__.__name__
+        )
+
+    def transform_data(self, signal: Signal, params: tuple) -> Signal:
+        signal["data"]["samples"] = F.spectrogram_image(
+            signal["data"]["samples"],
+            normalize_max=self.normalize_max,
+        )
+        return signal
 
 
 class AmplitudeScale(SignalTransform):

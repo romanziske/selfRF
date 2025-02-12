@@ -63,6 +63,21 @@ class RFCOCODataset(Dataset):
         # Get all IQ frame info
         self.iq_frames = self.coco['iq_frames']
 
+        # labels (not used right now)
+        self.categories = self.coco['categories']
+
+    def get_image_detection_dicts(self) -> List[Dict]:
+        """Convert RF COCO annotations to coco format"""
+        detection_records = []
+        for iq_frame in self.iq_frames:
+            record = {
+                "file_name": str(self.root / self.split / iq_frame["file_name"]),
+                "image_id": iq_frame["id"],
+                "annotations": self.mapping.get(iq_frame["id"], [])
+            }
+            detection_records.append(record)
+        return detection_records
+
     def _annotations_json_path(self) -> Path:
         """Returns the path to the COCO-style annotations JSON file."""
         return self.root / "annotations" / f"instances_{self.split}.json"

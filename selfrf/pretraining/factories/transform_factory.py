@@ -16,6 +16,7 @@ from selfrf.transforms import (
     ToSpectrogramTensor,
     ToTensor,
     BYOLTransform,
+    SpectrogramImage,
 )
 from selfrf.pretraining.config import BaseConfig, TrainingConfig, EvaluationConfig
 from selfrf.transforms.extra.target_transforms import ConstantTargetTransform
@@ -41,6 +42,7 @@ class TransformFactory:
                 mode=SpectrogramConfig.mode,
             ),
             Normalize(norm=np.inf, flatten=True),
+            SpectrogramImage(normalize_max=1),
             ToSpectrogramTensor(
                 to_float_32=config.to_float_32,
             ),
