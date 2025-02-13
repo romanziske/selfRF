@@ -5,12 +5,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 import lightning.pytorch as pl
 from minio import Minio
+from tqdm import tqdm
+
 from torch.utils.data import DataLoader
 
 from torchsig.transforms import Transform, Identity
 from torchsig.utils.dataset import collate_fn as collate_fn_default
-from tqdm import tqdm
-
 
 from selfrf.data.datasets import RFCOCODataset
 
@@ -149,7 +149,6 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
         """Download RF COCO dataset from Minio"""
 
         if self.download:
-            return
             _download(
                 root=self.root,
                 bucket=self.bucket,
@@ -176,6 +175,8 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
                 transform=self.transform,
                 target_transform=self.target_transform,
             )
+
+            self.class_list = self.train_dataset.categories
 
         else:
             raise NotImplementedError(

@@ -8,6 +8,8 @@ from torch.utils.data import Dataset
 from torchsig.utils.types import Signal, create_signal_data
 from torchsig.transforms import Transform, Identity
 
+from selfrf.finetuning.detection.detectron2.trainer import _signal_to_coco_annotation
+
 
 class RFCOCODataset(Dataset):
     """Base class for RF signal datasets in COCO format.
@@ -64,17 +66,48 @@ class RFCOCODataset(Dataset):
         self.iq_frames = self.coco['iq_frames']
 
         # labels (not used right now)
-        self.categories = self.coco['categories']
+        self.categories: Dict = self.coco['categories']
+        self.class_list = [category['name'] for category in self.categories]
 
     def get_image_detection_dicts(self) -> List[Dict]:
-        """Convert RF COCO annotations to coco format"""
+        """Convert RF COCO annotations to detectron training format"""
         detection_records = []
         for iq_frame in self.iq_frames:
+
+            annnotations = self.mapping.get(iq_frame["id"], [])
+
+            for ann in annnotations:
+                ann["category_id"] = self.class_list.index(ann["class_name"])
+
             record = {
                 "file_name": str(self.root / self.split / iq_frame["file_name"]),
                 "image_id": iq_frame["id"],
-                "annotations": self.mapping.get(iq_frame["id"], [])
+                "annotations": annnotations
             }
+
+            detection_records.append(record)
+        return detection_records
+
+    def get_evaluation_dicts(self) -> List[Dict]:
+        """Convert RF COCO annotations to detectron evaluation format"""
+        HEIGHT, WIDTH = 512, 512  # Assume fixed size for now
+        detection_records = []
+        for iq_frame in self.iq_frames:
+
+            annnotations = self.mapping.get(iq_frame["id"], [])
+
+            signal = Signal(
+                metadata=annnotations,
+            )
+
+            record = {
+                "file_name": str(self.root / self.split / iq_frame["file_name"]),
+                "image_id": iq_frame["id"],
+                "annotations": _signal_to_coco_annotation(signal, HEIGHT, WIDTH),
+                "height": HEIGHT,
+                "width": WIDTH,
+            }
+
             detection_records.append(record)
         return detection_records
 

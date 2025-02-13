@@ -1,58 +1,41 @@
 from pathlib import Path
-import cv2
+from typing import List
 import torch
 from tqdm import tqdm
-from detectron2.config import get_cfg
+
 from detectron2.modeling import build_model
 from detectron2.evaluation import COCOEvaluator
 from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.data.datasets import register_coco_instances
-from detectron2 import model_zoo
-from detectron2.data import detection_utils
 from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.utils.visualizer import Visualizer
+
+from selfrf.finetuning.detection.detectron2.config import Detectron2Config, build_detectron2_config
+from selfrf.finetuning.detection.detectron2.register import register_rfcoco_dataset
+from selfrf.finetuning.detection.detectron2.trainer import rfcoco_mapper
+from selfrf.finetuning.detection.detectron2.visualizer import visualize_sample
 
 
-def setup_cfg(weights_path: Path):
-    cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file(
-        "COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 61
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.1
-    cfg.MODEL.WEIGHTS = weights_path
-    cfg.MODEL.DEVICE = "cpu"
-    cfg.INPUT.FORMAT = "L"
-    cfg.MODEL.PIXEL_MEAN = [128.0]  # Center data
-    cfg.MODEL.PIXEL_STD = [128.0]   # Scale to ~[-1,1]
-
-    return cfg
-
-
-def evaluate_model(weights_path: Path):
+def evaluate_model(root: Path,
+                   weights_path: Path,
+                   visualize: bool = False):
     # Register dataset
-    register_coco_instances(
-        "wideband_val",
-        {},
-        "datasets/wideband/coco/annotations/instances_val.json",
-        "datasets/wideband/coco/val"
-    )
-
+    register_rfcoco_dataset(root=root)
     # Setup config
-    cfg = setup_cfg(weights_path)
+    cfg = build_detectron2_config(Detectron2Config(weights_path=weights_path))
 
     # Setup evaluator
     output_dir = Path("output/evaluation")
     output_dir.mkdir(parents=True, exist_ok=True)
     evaluator = COCOEvaluator(
-        "wideband_val",
+        "rfcoco_val",
         tasks=("bbox",),
         distributed=False,
         output_dir=str(output_dir)
     )
 
-    vis_dir = output_dir / "visualizations"
-    vis_dir.mkdir(exist_ok=True)
-    metadata = MetadataCatalog.get("wideband_val")
+    if visualize:
+        vis_dir = output_dir / "visualizations"
+        vis_dir.mkdir(exist_ok=True)
+        metadata = MetadataCatalog.get("rfcoco_val")
 
     # Run evaluation
     model = build_model(cfg)
@@ -63,33 +46,28 @@ def evaluate_model(weights_path: Path):
 
     evaluator.reset()
 
-    val_loader = DatasetCatalog.get("wideband_val")
+    val_loader = DatasetCatalog.get("rfcoco_val")
     for d in tqdm(val_loader, desc="Evaluating", total=len(val_loader)):
         # Load image from file path
-        img_orig = detection_utils.read_image(d["file_name"], format="L")
-        if img_orig is None:
-            print(f"Could not load image: {d['file_name']}")
-            continue
+        # Use mapper to process data
+        processed_dict = rfcoco_mapper(d)
+        img: torch.Tensor = processed_dict["image"]
 
         # run prediction
         with torch.no_grad():
             # Apply pre-processing to image.
-            height, width = img_orig.shape[:2]
-            img = torch.as_tensor(img_orig.transpose(2, 0, 1))
+            height, width = img.shape[:2]
             img.to(cfg.MODEL.DEVICE)
 
             inputs = {"image": img, "height": height, "width": width}
 
             output = model([inputs])[0]
 
-            if False:
-                visualizer = Visualizer(
-                    img_orig, metadata=metadata, scale=1.0)  # Original HWC image
-                vis = visualizer.draw_instance_predictions(output["instances"])
-
-                # Show image
-                cv2.imshow("COCO Visualization", vis.get_image()[:, :, ::-1])
-                cv2.waitKey(0)
+            if visualize:
+                visualize_sample(img,
+                                 metadata,
+                                 output["instances"],
+                                 vis_dir / f"{d['image_id']}.png")
 
         evaluator.process(
             inputs=[{
@@ -103,10 +81,5 @@ def evaluate_model(weights_path: Path):
 
     # Compute metrics
     results = evaluator.evaluate()
-
+    print(results)
     return results
-
-
-if __name__ == "__main__":
-    weights_path = "output/model_final.pth"
-    evaluate_model(weights_path)

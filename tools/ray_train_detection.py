@@ -2,7 +2,7 @@ import ray
 from ray.train.torch import TorchTrainer
 from ray.air import RunConfig, ScalingConfig
 
-from train_detection import train_detector
+from train_detection import train
 
 
 def train_on_ray():
@@ -10,7 +10,7 @@ def train_on_ray():
     ray.init()
 
     trainer = TorchTrainer(
-        train_loop_per_worker=train_detector,
+        train_loop_per_worker=train,
         run_config=RunConfig(
             name="detectron2_training",
         ),
