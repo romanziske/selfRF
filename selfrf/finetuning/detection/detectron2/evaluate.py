@@ -1,7 +1,6 @@
 from pathlib import Path
-from typing import List
-import torch
 from tqdm import tqdm
+import torch
 
 from detectron2.modeling import build_model
 from detectron2.evaluation import COCOEvaluator

@@ -8,7 +8,7 @@ from detectron2.data import detection_utils, build_detection_train_loader, build
 from detectron2.evaluation import COCOEvaluator
 from detectron2.structures import BoxMode
 
-from torchsig.transforms.target_transforms import DescToBBoxCOCO
+from torchsig.transforms.target_transforms import DescToBBoxDict
 from torchsig.utils.types import Signal, create_signal_data
 from torchsig.datasets.signal_classes import torchsig_signals
 
@@ -17,7 +17,7 @@ from selfrf.pretraining.config.base_config import BaseConfig
 
 FFT_SIZE = 512
 class_list = torchsig_signals.class_list
-target_transform = DescToBBoxCOCO(class_list=class_list)
+target_transform = DescToBBoxDict(class_list=class_list)
 
 
 def rfcoco_mapper(dataset_dict: Dict):
