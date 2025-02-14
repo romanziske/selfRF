@@ -176,8 +176,6 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
                 target_transform=self.target_transform,
             )
 
-            self.class_list = self.train_dataset.categories
-
         else:
             raise NotImplementedError(
                 "setup not implemented for stage: {stage}")

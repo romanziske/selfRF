@@ -15,13 +15,13 @@ class Detectron2Config:
     # Number of classes (61 signal classes)
     num_classes: int = 61
     # Number of training iterations
-    max_iter: int = 10  # _000
+    max_iter: int = 90_000
     # Number of warmup iterations
     warmup_iters: int = 4000
     # Base learning rate
     base_lr: float = 0.0001
     # Number of images per batch
-    ims_per_batch: int = 2
+    ims_per_batch: int = 8
     # Checkpoint period
     checkpoint_period: int = 1000
     # Gradient clipping value
@@ -50,7 +50,7 @@ def build_detectron2_config(config: Detectron2Config = Detectron2Config()) -> Cf
     # Model parameters
     cfg.MODEL.WEIGHTS = config.weights_path
     cfg.MODEL.ROI_HEADS.NUM_CLASSES = config.num_classes
-    cfg.MODEL.DEVICE = "gpu" if torch.cuda.is_available() else "cpu"
+    cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     cfg.INPUT.FORMAT = "L"
     cfg.MODEL.PIXEL_MEAN = [0.0]  # Already normalized
     cfg.MODEL.PIXEL_STD = [1.0]   # No scaling needed
