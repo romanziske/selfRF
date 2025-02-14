@@ -1,7 +1,10 @@
+from functools import partial
 import json
 import os
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 from dotenv import load_dotenv
 import lightning.pytorch as pl
 from minio import Minio
@@ -176,8 +179,6 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
                 target_transform=self.target_transform,
             )
 
-            self.class_list = self.train_dataset.categories
-
         else:
             raise NotImplementedError(
                 "setup not implemented for stage: {stage}")
@@ -188,14 +189,15 @@ def _download(
         bucket: str,
         dataset_name: str,
         minio: Minio,
+        max_workers: int = 10,
+        chunk_size: int = 100,
 ):
     dataset_path = root / dataset_name
     print(f"Downloading dataset to {dataset_path}")
     dataset_path.mkdir(parents=True, exist_ok=True)
 
-    # Download annotation files with progress bar
+    # Download annotation files
     for split in ["train", "val"]:
-
         annot_file = f"instances_{split}.json"
         annot_file_local_path = dataset_path / "annotations" / annot_file
         annot_file_local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -207,18 +209,41 @@ def _download(
         )
 
         annotations = json.loads(annot_file_local_path.read_text())
+        frames = annotations["iq_frames"]
 
-        # Download IQ files with nested progress bar
-        for frame in tqdm(
-            annotations["iq_frames"],
-            desc=f"Downloading {split} IQ frames",
-            leave=False
-        ):
-            iq_local_path = dataset_path / split / str(frame["file_name"])
-            iq_local_path.parent.mkdir(parents=True, exist_ok=True)
+        # Split frames into chunks for better throughput
+        for i in range(0, len(frames), chunk_size):
+            chunk = frames[i:i + chunk_size]
 
-            minio.fget_object(
-                bucket,
-                f"{dataset_path}/{split}/{frame['file_name']}",
-                str(iq_local_path)
-            )
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(
+                        _download_iq_frame,
+                        frame=frame,
+                        dataset_path=dataset_name,  # Use name instead of full path
+                        bucket=bucket,
+                        split=split,
+                        minio=minio
+                    )
+                    for frame in chunk
+                ]
+
+                for _ in tqdm(
+                    concurrent.futures.as_completed(futures),
+                    total=len(chunk),
+                    desc=f"Downloading {split} chunk {i//chunk_size + 1}/{len(frames)//chunk_size + 1}"
+                ):
+                    continue
+
+
+def _download_iq_frame(frame: Dict, split: str, dataset_path: Path, bucket: str, minio: Minio):
+    """Helper function to download a single IQ frame"""
+    iq_local_path = dataset_path / split / str(frame["file_name"])
+    iq_local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    minio.fget_object(
+        bucket,
+        f"{dataset_path}/{split}/{frame['file_name']}",
+        str(iq_local_path)
+    )
+    return frame["file_name"]
