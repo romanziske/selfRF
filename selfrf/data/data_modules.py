@@ -211,8 +211,12 @@ def _download(
         annotations = json.loads(annot_file_local_path.read_text())
         frames = annotations["iq_frames"]
 
-        # Split frames into chunks for better throughput
-        for i in range(0, len(frames), chunk_size):
+        # Calculate total chunks for better progress tracking
+        total_chunks = (len(frames) + chunk_size - 1) // chunk_size
+        print(
+            f"\nDownloading {len(frames)} files in {total_chunks} chunks for {split} split")
+
+        for chunk_idx, i in enumerate(range(0, len(frames), chunk_size), 1):
             chunk = frames[i:i + chunk_size]
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -220,7 +224,7 @@ def _download(
                     executor.submit(
                         _download_iq_frame,
                         frame=frame,
-                        dataset_path=dataset_name,  # Use name instead of full path
+                        dataset_path=dataset_path,
                         bucket=bucket,
                         split=split,
                         minio=minio
@@ -231,7 +235,7 @@ def _download(
                 for _ in tqdm(
                     concurrent.futures.as_completed(futures),
                     total=len(chunk),
-                    desc=f"Downloading {split} chunk {i//chunk_size + 1}/{len(frames)//chunk_size + 1}"
+                    desc=f"Downloading {split} chunk {chunk_idx}/{total_chunks}"
                 ):
                     continue
 
