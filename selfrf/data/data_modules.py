@@ -189,8 +189,7 @@ def _download(
         bucket: str,
         dataset_name: str,
         minio: Minio,
-        max_workers: int = 10,
-        chunk_size: int = 100,
+        max_workers: int = 4
 ):
     dataset_path = root / dataset_name
     print(f"Downloading dataset to {dataset_path}")
@@ -209,35 +208,23 @@ def _download(
         )
 
         annotations = json.loads(annot_file_local_path.read_text())
-        frames = annotations["iq_frames"]
 
-        # Calculate total chunks for better progress tracking
-        total_chunks = (len(frames) + chunk_size - 1) // chunk_size
-        print(
-            f"\nDownloading {len(frames)} files in {total_chunks} chunks for {split} split")
+        # Download IQ files in parallel
+        download_fn = partial(_download_iq_frame,
+                              dataset_path=dataset_path,
+                              bucket=bucket,
+                              split=split,
+                              minio=minio)
 
-        for chunk_idx, i in enumerate(range(0, len(frames), chunk_size), 1):
-            chunk = frames[i:i + chunk_size]
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(download_fn, frame)
+                       for frame in annotations["iq_frames"]]
 
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [
-                    executor.submit(
-                        _download_iq_frame,
-                        frame=frame,
-                        dataset_path=dataset_path,
-                        bucket=bucket,
-                        split=split,
-                        minio=minio
-                    )
-                    for frame in chunk
-                ]
-
-                for _ in tqdm(
-                    concurrent.futures.as_completed(futures),
-                    total=len(chunk),
-                    desc=f"Downloading {split} chunk {chunk_idx}/{total_chunks}"
-                ):
-                    continue
+            list(tqdm(
+                concurrent.futures.as_completed(futures),
+                total=len(annotations["iq_frames"]),
+                desc=f"Downloading {split} IQ frames"
+            ))
 
 
 def _download_iq_frame(frame: Dict, split: str, dataset_path: Path, bucket: str, minio: Minio):
