@@ -78,22 +78,27 @@ class RFCOCODataModule(pl.LightningDataModule):
 
 class TorchsigNarrowbandRFCOCODataModule(RFCOCODataModule):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self,
+                 dataset_name: str = "narrowband_impaired",
+                 download: bool = False,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         load_dotenv()
 
-        self.dataset_name = "narrowband_impaired"
+        self.dataset_name = dataset_name
         self.bucket = "iqdm-ai"
-        self.download = True
 
-        self.minio = Minio(
-            endpoint=os.getenv("MINIO_ENDPOINT"),
-            access_key=os.getenv("MINIO_ACCESS_KEY"),
-            secret_key=os.getenv("MINIO_SECRET_KEY"),
-            secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
-            cert_check=os.getenv("MINIO_CERT_CHECK", "true").lower() == "true",
-        )
+        self.download = download
+        if self.download:
+            self.minio = Minio(
+                endpoint=os.getenv("MINIO_ENDPOINT"),
+                access_key=os.getenv("MINIO_ACCESS_KEY"),
+                secret_key=os.getenv("MINIO_SECRET_KEY"),
+                secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
+                cert_check=os.getenv("MINIO_CERT_CHECK",
+                                     "true").lower() == "true",
+            )
 
     def prepare_data(self):
         """Download RF COCO dataset from Minio"""
@@ -131,22 +136,28 @@ class TorchsigNarrowbandRFCOCODataModule(RFCOCODataModule):
 
 
 class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
-    def __init__(self, *args, **kwargs):
+    def __init__(self,
+                 dataset_name: str = "wideband_impaired",
+                 download: bool = False,
+                 *args,
+                 **kwargs):
         super().__init__(*args, **kwargs)
 
         load_dotenv()
 
-        self.dataset_name = "wideband_impaired"
+        self.dataset_name = dataset_name
         self.bucket = "iqdm-ai"
-        self.download = True
+        self.download = download
 
-        self.minio = Minio(
-            endpoint=os.getenv("MINIO_ENDPOINT"),
-            access_key=os.getenv("MINIO_ACCESS_KEY"),
-            secret_key=os.getenv("MINIO_SECRET_KEY"),
-            secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
-            cert_check=os.getenv("MINIO_CERT_CHECK", "true").lower() == "true",
-        )
+        if self.download:
+            self.minio = Minio(
+                endpoint=os.getenv("MINIO_ENDPOINT"),
+                access_key=os.getenv("MINIO_ACCESS_KEY"),
+                secret_key=os.getenv("MINIO_SECRET_KEY"),
+                secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
+                cert_check=os.getenv("MINIO_CERT_CHECK",
+                                     "true").lower() == "true",
+            )
 
     def prepare_data(self):
         """Download RF COCO dataset from Minio"""
@@ -189,7 +200,7 @@ def _download(
         bucket: str,
         dataset_name: str,
         minio: Minio,
-        max_workers: int = 4
+        max_workers: int = 10,
 ):
     dataset_path = root / dataset_name
     print(f"Downloading dataset to {dataset_path}")

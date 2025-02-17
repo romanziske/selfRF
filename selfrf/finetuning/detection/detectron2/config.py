@@ -1,33 +1,114 @@
-from dataclasses import dataclass
+from dataclasses import fields, dataclass
+import argparse
 import torch
 
-from detectron2 import model_zoo
 from detectron2.config import get_cfg, CfgNode
+from detectron2 import model_zoo
+
+# Default values as constants
+DEFAULT_DOWNLOAD = False
+DEFAULT_WEIGHTS_PATH = ""
+DEFAULT_NUM_CLASSES = 61
+DEFAULT_MAX_ITER = 90_000
+DEFAULT_WARMUP_ITERS = 4000
+DEFAULT_BASE_LR = 0.0001
+DEFAULT_IMS_PER_BATCH = 8
+DEFAULT_CHECKPOINT_PERIOD = 1000
+DEFAULT_CLIP_VALUE = 1.0
+DEFAULT_CLIP_TYPE = "norm"
 
 
 @dataclass
 class Detectron2Config:
-    """
-    Configuration for Detectron2 model training.
-    """
-    # Path to model weights
-    weights_path: str = ""
-    # Number of classes (61 signal classes)
-    num_classes: int = 61
-    # Number of training iterations
-    max_iter: int = 90_000
-    # Number of warmup iterations
-    warmup_iters: int = 4000
-    # Base learning rate
-    base_lr: float = 0.0001
-    # Number of images per batch
-    ims_per_batch: int = 8
-    # Checkpoint period
-    checkpoint_period: int = 1000
-    # Gradient clipping value
-    clip_value: float = 1.0
-    # Gradient clipping type
-    clip_type: str = "value"
+    """Configuration for Detectron2 model training."""
+    download: bool = DEFAULT_DOWNLOAD
+    weights_path: str = DEFAULT_WEIGHTS_PATH
+    num_classes: int = DEFAULT_NUM_CLASSES
+    max_iter: int = DEFAULT_MAX_ITER
+    warmup_iters: int = DEFAULT_WARMUP_ITERS
+    base_lr: float = DEFAULT_BASE_LR
+    ims_per_batch: int = DEFAULT_IMS_PER_BATCH
+    checkpoint_period: int = DEFAULT_CHECKPOINT_PERIOD
+    clip_value: float = DEFAULT_CLIP_VALUE
+    clip_type: str = DEFAULT_CLIP_TYPE
+
+
+def add_detectron2_config_args(parser: argparse.ArgumentParser) -> None:
+    """Add Detectron2 specific arguments to parser."""
+    parser.add_argument(
+        '--download',
+        type=lambda x: x.lower() == 'true',
+        default=DEFAULT_DOWNLOAD,
+        help='Download dataset model weights'
+    )
+    parser.add_argument(
+        '--weights-path',
+        type=str,
+        default=DEFAULT_WEIGHTS_PATH,
+        help='Path to pretrained model weights'
+    )
+    parser.add_argument(
+        '--num-classes',
+        type=int,
+        default=DEFAULT_NUM_CLASSES,
+        help='Number of classes to detect'
+    )
+    parser.add_argument(
+        '--max-iter',
+        type=int,
+        default=DEFAULT_MAX_ITER,
+        help='Maximum number of training iterations'
+    )
+    parser.add_argument(
+        '--warmup-iters',
+        type=int,
+        default=DEFAULT_WARMUP_ITERS,
+        help='Number of warmup iterations'
+    )
+    parser.add_argument(
+        '--base-lr',
+        type=float,
+        default=DEFAULT_BASE_LR,
+        help='Base learning rate'
+    )
+    parser.add_argument(
+        '--ims-per-batch',
+        type=int,
+        default=DEFAULT_IMS_PER_BATCH,
+        help='Images per batch'
+    )
+    parser.add_argument(
+        '--checkpoint-period',
+        type=int,
+        default=DEFAULT_CHECKPOINT_PERIOD,
+        help='Checkpoint save frequency'
+    )
+    parser.add_argument(
+        '--clip-value',
+        type=float,
+        default=DEFAULT_CLIP_VALUE,
+        help='Gradient clipping value'
+    )
+    parser.add_argument(
+        '--clip-type',
+        type=str,
+        choices=['value', 'norm'],
+        default=DEFAULT_CLIP_TYPE,
+        help='Gradient clipping type'
+    )
+
+
+def print_config(config: Detectron2Config) -> None:
+    """Print config in a structured format"""
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    ENDC = '\033[0m'
+
+    print(f"\n{BLUE}Detectron2 Configuration:{ENDC}")
+    for field in fields(config):
+        value = getattr(config, field.name)
+        print(f"  {CYAN}{field.name}:{ENDC} {GREEN}{value}{ENDC}")
 
 
 def build_detectron2_config(config: Detectron2Config = Detectron2Config()) -> CfgNode:
@@ -45,7 +126,12 @@ def build_detectron2_config(config: Detectron2Config = Detectron2Config()) -> Cf
         "COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml"))
     cfg.DATASETS.TRAIN = ("rfcoco_train",)
     cfg.DATASETS.TEST = ("rfcoco_val",)
-    cfg.MIN_SIZE_TRAIN = (512,)  # Keep fixed size
+    # Disable all augmentations
+    cfg.INPUT.MIN_SIZE_TRAIN = (512,)  # Only one size, no range
+    cfg.INPUT.MAX_SIZE_TRAIN = 512
+    cfg.INPUT.MIN_SIZE_TEST = 512
+    cfg.INPUT.MAX_SIZE_TEST = 512
+    cfg.INPUT.RANDOM_FLIP = "none"
 
     # Model parameters
     cfg.MODEL.WEIGHTS = config.weights_path

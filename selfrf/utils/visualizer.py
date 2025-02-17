@@ -6,7 +6,7 @@ from matplotlib.figure import Figure
 import torch
 
 
-class SSLViewVisualizer():
+class ViewInvarianceVisualizer():
     """Visualizes self-supervised learning data augmentation views.
 
     This visualizer shows the original signal and its transformed view side by side,
@@ -50,8 +50,8 @@ class SSLViewVisualizer():
     def _visualize(self, batch: Tuple[List[torch.Tensor], torch.Tensor, List[str]]) -> Figure:
         """Create side-by-side visualization of view pairs."""
 
+        batch_size = len(batch)
         views = batch[0]
-        batch_size = views[0].shape[0]
         views1, views2 = views[0], views[1]
 
         # Create figure with subplots for each sample
@@ -70,6 +70,19 @@ class SSLViewVisualizer():
 
             view1 = views1[i]
             view2 = views2[i]
+
+            # Ensure views are in correct format
+            if isinstance(view1, torch.Tensor):
+                view1 = view1.numpy()
+            if isinstance(view2, torch.Tensor):
+                view2 = view2.numpy()
+
+            # ensure views are 2D
+            if view1.ndim == 3:
+                view1 = view1.squeeze(0)
+            if view2.ndim == 3:
+                view2 = view2.squeeze(0)
+
             # Plot views
             axes[i, 0].imshow(view1, aspect='auto', cmap='jet')
             axes[i, 1].imshow(view2, aspect='auto', cmap='jet')

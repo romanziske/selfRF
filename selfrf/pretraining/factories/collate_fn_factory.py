@@ -6,9 +6,8 @@ from selfrf.pretraining.config.evaluation_config import EvaluationConfig
 from selfrf.pretraining.config.training_config import TrainingConfig
 
 
-def collate_fn(batch: Any) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+def collate_fn(batch) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
     """Custom collate for 2 views"""
-    print(batch)
 
     views, targets = zip(*batch)
 
@@ -34,7 +33,6 @@ def collate_fn_evaluation(batch):
 
 
 def build_collate_fn(config: Union[TrainingConfig, EvaluationConfig]):
-
     if isinstance(config, EvaluationConfig):
         return collate_fn_evaluation
     else:

@@ -25,11 +25,12 @@ class DatasetFactory:
 
         return dataset_class(
             root=config.root,
+            download=config.download,
             batch_size=config.batch_size,
             num_workers=config.num_workers,
             transform=build_transform(config),
             target_transform=build_target_transform(config),
-            collate_fn=build_collate_fn(config)
+            collate_fn=build_collate_fn(config),
         )
 
 

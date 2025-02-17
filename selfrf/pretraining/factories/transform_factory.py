@@ -27,7 +27,7 @@ from selfrf.pretraining.utils.enums import TransformType, SSLModelType, DatasetT
 @dataclass
 class SpectrogramConfig:
     nfft: int
-    noverlap: int = 0
+    noverlap: int
     mode: str = 'psd'
 
 
@@ -37,7 +37,7 @@ class TransformFactory:
         return Compose([
             Spectrogram(
                 nperseg=config.nfft,
-                noverlap=SpectrogramConfig.noverlap,
+                noverlap=config.noverlap,
                 nfft=config.nfft,
                 mode=SpectrogramConfig.mode,
             ),

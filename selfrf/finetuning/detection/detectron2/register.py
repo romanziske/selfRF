@@ -5,11 +5,13 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from selfrf.data.data_modules import TorchsigWidebandRFCOCODataModule
 
 
-def register_rfcoco_dataset(root: Path):
+def register_rfcoco_dataset(root: Path, dataset_name: str, download: bool = False):
     """Register RF COCO format dataset with detectron2"""
 
     datamodule = TorchsigWidebandRFCOCODataModule(
         root=root,
+        dataset_name=dataset_name,
+        download=download,
     )
 
     datamodule.prepare_data()
