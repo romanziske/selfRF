@@ -7,6 +7,7 @@ import numpy as np
 from detectron2.engine.hooks import HookBase
 from detectron2.utils.events import get_event_storage
 from detectron2.data import MetadataCatalog
+import torch
 
 from selfrf.finetuning.detection.detectron2.trainer import rfcoco_mapper
 
@@ -30,20 +31,31 @@ class HighLossDetector(HookBase):
 
     def after_step(self):
         storage = get_event_storage()
-        # Get the actual loss value from the tuple
-        loss = storage.latest()["total_loss"][0] if isinstance(
-            storage.latest()["total_loss"], tuple
-        ) else storage.latest()["total_loss"]
+        latest = storage.latest()
 
-        if loss > self.loss_threshold:  # If loss is too high
-            batch = next(self.dataloader)  # Get the next batch
-            self.save_debug_image(batch, loss)
+        # Check specifically for infinite RPN localization loss
+        rpn_loc_loss = latest.get("loss_rpn_loc", 0)
+        if isinstance(rpn_loc_loss, tuple):
+            rpn_loc_loss = rpn_loc_loss[0]
+
+        # Convert to tensor if it's a float
+        if isinstance(rpn_loc_loss, (float, int)):
+            rpn_loc_loss = torch.tensor(rpn_loc_loss)
+
+        is_infinite = torch.isinf(rpn_loc_loss).any(
+        ) if torch.is_tensor(rpn_loc_loss) else False
+        is_high_loss = rpn_loc_loss.item() > self.loss_threshold if torch.is_tensor(
+            rpn_loc_loss) else rpn_loc_loss > self.loss_threshold
+
+        if is_infinite or is_high_loss:
+            print(
+                f"⚠️ Detected {'infinite' if is_infinite else 'high'} RPN loc loss: {rpn_loc_loss}")
+            batch = next(self.dataloader)
+            self.save_debug_image(batch, float(rpn_loc_loss))
 
     def save_debug_image(self, batch, loss):
         dataset_dicts = batch  # Detectron2 uses dataset dicts
         for data in dataset_dicts:
-            data = rfcoco_mapper(data)  # Map data to model input
-
             image = data["image"].permute(
                 1, 2, 0).cpu().numpy()  # Convert tensor to NumPy
             image = (image * 255).astype(np.uint8)  # Convert to 0-255 range

@@ -7,6 +7,7 @@ from detectron2 import model_zoo
 
 # Default values as constants
 DEFAULT_DOWNLOAD = False
+DEFAULT_DATASET = "wideband_impaired"
 DEFAULT_WEIGHTS_PATH = ""
 DEFAULT_NUM_CLASSES = 61
 DEFAULT_MAX_ITER = 90_000
@@ -21,6 +22,8 @@ DEFAULT_CLIP_TYPE = "norm"
 @dataclass
 class Detectron2Config:
     """Configuration for Detectron2 model training."""
+    root: str = ""
+    dataset_name: str = DEFAULT_DATASET
     download: bool = DEFAULT_DOWNLOAD
     weights_path: str = DEFAULT_WEIGHTS_PATH
     num_classes: int = DEFAULT_NUM_CLASSES
@@ -35,6 +38,18 @@ class Detectron2Config:
 
 def add_detectron2_config_args(parser: argparse.ArgumentParser) -> None:
     """Add Detectron2 specific arguments to parser."""
+    parser.add_argument(
+        '--root',
+        type=str,
+        default='',
+        help='Root directory for dataset'
+    )
+    parser.add_argument(
+        '--dataset-name',
+        type=str,
+        default=DEFAULT_DATASET,
+        help='Name of dataset'
+    )
     parser.add_argument(
         '--download',
         type=lambda x: x.lower() == 'true',

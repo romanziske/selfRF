@@ -162,6 +162,13 @@ class TorchsigWidebandRFCOCODataModule(RFCOCODataModule):
     def prepare_data(self):
         """Download RF COCO dataset from Minio"""
 
+        print(f"Checking if dataset exists at {self.root / self.dataset_name}")
+        # check if dataset is already exists
+        if _check_if_dataset_exists(self.root, self.dataset_name):
+            print(
+                f"Dataset already exists at {self.root / self.dataset_name}. Skipping download or generation.")
+            return
+
         if self.download:
             _download(
                 root=self.root,
@@ -202,19 +209,19 @@ def _download(
         minio: Minio,
         max_workers: int = 10,
 ):
-    dataset_path = root / dataset_name
-    print(f"Downloading dataset to {dataset_path}")
-    dataset_path.mkdir(parents=True, exist_ok=True)
+    download_path = root / dataset_name
+    print(f"Downloading dataset to {download_path}")
+    download_path.mkdir(parents=True, exist_ok=True)
 
     # Download annotation files
     for split in ["train", "val"]:
         annot_file = f"instances_{split}.json"
-        annot_file_local_path = dataset_path / "annotations" / annot_file
+        annot_file_local_path = download_path / "annotations" / annot_file
         annot_file_local_path.parent.mkdir(parents=True, exist_ok=True)
 
         minio.fget_object(
             bucket,
-            f"{dataset_path}/annotations/{annot_file}",
+            f"{dataset_name}/annotations/{annot_file}",
             str(annot_file_local_path)
         )
 
@@ -222,7 +229,8 @@ def _download(
 
         # Download IQ files in parallel
         download_fn = partial(_download_iq_frame,
-                              dataset_path=dataset_path,
+                              root=root,
+                              dataset_name=dataset_name,
                               bucket=bucket,
                               split=split,
                               minio=minio)
@@ -238,14 +246,34 @@ def _download(
             ))
 
 
-def _download_iq_frame(frame: Dict, split: str, dataset_path: Path, bucket: str, minio: Minio):
+def _download_iq_frame(
+    frame: Dict,
+    split: str,
+    root: Path,
+    dataset_name: Path,
+    bucket: str,
+    minio: Minio,
+):
     """Helper function to download a single IQ frame"""
-    iq_local_path = dataset_path / split / str(frame["file_name"])
+    download_path = root / dataset_name
+    iq_local_path = download_path / split / str(frame["file_name"])
     iq_local_path.parent.mkdir(parents=True, exist_ok=True)
 
     minio.fget_object(
         bucket,
-        f"{dataset_path}/{split}/{frame['file_name']}",
+        f"{dataset_name}/{split}/{frame['file_name']}",
         str(iq_local_path)
     )
     return frame["file_name"]
+
+
+def _check_if_dataset_exists(root: Path, dataset_name: str):
+
+    for split in ["train", "val"]:
+        annot_file = f"instances_{split}.json"
+        annot_file_local_path = root / dataset_name / "annotations" / annot_file
+
+        if not annot_file_local_path.exists():
+            return False
+
+    return True
