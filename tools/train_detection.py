@@ -3,12 +3,14 @@ import argparse
 import os
 
 from detectron2.data import build_detection_train_loader
-from detectron2.utils.events import get_event_storage
+from detectron2.utils.logger import setup_logger
 
 from selfrf.finetuning.detection.detectron2.config import Detectron2Config, add_detectron2_config_args, build_detectron2_config, print_config
 from selfrf.finetuning.detection.detectron2.debug import HighLossDetector
 from selfrf.finetuning.detection.detectron2.register import register_rfcoco_dataset
 from selfrf.finetuning.detection.detectron2.trainer import SpectrogramTrainer, rfcoco_mapper
+
+setup_logger()
 
 
 def train(config: Detectron2Config):
@@ -33,21 +35,21 @@ def train(config: Detectron2Config):
     trainer = SpectrogramTrainer(cfg)
 
     # Store last processed batch for debugging
-    last_batch = None
+    last_batch = []  # Use list instead of None for thread safety
 
-    def store_batch(x, **kwargs):
+    def store_batch(x):
+        """Store batch before processing"""
         nonlocal last_batch
-        last_batch = x
-        return x
+        last_batch = x  # Store the entire batch
+        return rfcoco_mapper(x)  # Apply mapping after storing
 
     train_loader = build_detection_train_loader(
         cfg,
-        mapper=rfcoco_mapper,
-        aspect_ratio_grouping=False,  # Disable for easier debugging
+        mapper=store_batch,  # Use our store_batch function directly
+        aspect_ratio_grouping=False,
     )
-    train_loader._map_worker = lambda x: store_batch(rfcoco_mapper(x))
 
-    # Create debug hook
+   # Create debug hook
     debug_hook = HighLossDetector(
         model=trainer.model,
         dataloader=train_loader,
@@ -61,20 +63,23 @@ def train(config: Detectron2Config):
     try:
         trainer.train()
     except Exception as e:
-        print(f"⚠️ Training crashed with error: {str(e)}")
+        print(f"\n⚠️ Training crashed with error: {str(e)}")
 
-        if last_batch is not None:
+        if last_batch:  # Check if list is not empty
             print("\nDebug information for last processed batch:")
-            for item in last_batch:
-                if "file_name" in item:
-                    print(f"Image path: {item['file_name']}")
-                if "image" in item:
-                    print(f"Image shape: {item['image'].shape}")
-                if "instances" in item:
-                    print(f"Number of instances: {len(item['instances'])}")
+            for i, item in enumerate(last_batch):
+                print(f"\nItem {i}:")
+                print(f"File: {item.get('file_name', 'N/A')}")
+                if 'image' in item:
+                    print(
+                        f"Image shape: {item['image'].shape if hasattr(item['image'], 'shape') else 'N/A'}")
+                if 'instances' in item:
+                    print(
+                        f"Instances: {len(item['instances']) if hasattr(item['instances'], '__len__') else 'N/A'}")
                 print("---")
         else:
-            print("No batch information available")
+            print("No batch information available (batch list empty)")
+            print(f"Batch type: {type(last_batch)}")
 
         raise  # Re-raise the exception
 
