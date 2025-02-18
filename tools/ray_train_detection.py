@@ -43,17 +43,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Create config from args
-    config = Detectron2Config(
-        weights_path=args.weights_path,
-        num_classes=args.num_classes,
-        max_iter=args.max_iter,
-        warmup_iters=args.warmup_iters,
-        base_lr=args.base_lr,
-        ims_per_batch=args.ims_per_batch,
-        checkpoint_period=args.checkpoint_period,
-        clip_value=args.clip_value,
-        clip_type=args.clip_type
-    )
+    config = Detectron2Config(**vars(args))
 
     print_config(config)
     train_on_ray(config)
