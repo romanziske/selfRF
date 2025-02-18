@@ -9,8 +9,6 @@ from detectron2.utils.events import get_event_storage
 from detectron2.data import MetadataCatalog
 import torch
 
-from selfrf.finetuning.detection.detectron2.trainer import rfcoco_mapper
-
 
 class HighLossDetector(HookBase):
     def __init__(self, model, dataloader, output_dir, loss_threshold=10.0):

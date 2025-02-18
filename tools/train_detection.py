@@ -3,6 +3,7 @@ import argparse
 import os
 
 from detectron2.data import build_detection_train_loader
+from detectron2.utils.events import get_event_storage
 
 from selfrf.finetuning.detection.detectron2.config import Detectron2Config, add_detectron2_config_args, build_detectron2_config, print_config
 from selfrf.finetuning.detection.detectron2.debug import HighLossDetector
@@ -45,7 +46,19 @@ def train(config: Detectron2Config):
     # Register as first hook to ensure it runs
     trainer._hooks = [debug_hook] + trainer._hooks
     trainer.resume_or_load(resume=False)
-    trainer.train()
+    try:
+        trainer.train()
+    except Exception as e:
+        print(f"⚠️ Training crashed with error: {str(e)}")
+        # Force hook to save current state
+        if hasattr(debug_hook, 'after_step'):
+            try:
+                storage = get_event_storage()
+                if storage.latest():
+                    debug_hook.after_step()
+            except Exception as hook_error:
+                print(f"Failed to save debug state: {hook_error}")
+        raise  # Re-raise the original exception
 
 
 if __name__ == "__main__":
