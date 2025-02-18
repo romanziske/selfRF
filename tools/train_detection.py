@@ -50,12 +50,11 @@ def train(config: Detectron2Config):
         trainer.train()
     except Exception as e:
         print(f"⚠️ Training crashed with error: {str(e)}")
-        # Force hook to save current state
-        if hasattr(debug_hook, 'after_step'):
+        # Force hook to save current state inside proper context
+        from detectron2.utils.events import EventStorage
+        with EventStorage() as storage:
             try:
-                storage = get_event_storage()
-                if storage.latest():
-                    debug_hook.after_step()
+                debug_hook.after_step()
             except Exception as hook_error:
                 print(f"Failed to save debug state: {hook_error}")
         raise  # Re-raise the original exception
