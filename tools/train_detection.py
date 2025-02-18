@@ -32,32 +32,51 @@ def train(config: Detectron2Config):
 
     trainer = SpectrogramTrainer(cfg)
 
-    # Create hook with lower threshold to catch issues earlier
+    # Store last processed batch for debugging
+    last_batch = None
+
+    def store_batch(x, **kwargs):
+        nonlocal last_batch
+        last_batch = x
+        return x
+
+    train_loader = build_detection_train_loader(
+        cfg,
+        mapper=rfcoco_mapper,
+        aspect_ratio_grouping=False,  # Disable for easier debugging
+    )
+    train_loader._map_worker = lambda x: store_batch(rfcoco_mapper(x))
+
+    # Create debug hook
     debug_hook = HighLossDetector(
         model=trainer.model,
-        dataloader=build_detection_train_loader(
-            cfg,
-            mapper=rfcoco_mapper
-        ),
-        output_dir=".",
+        dataloader=train_loader,
+        output_dir=debug_dir,
         loss_threshold=10,
     )
 
-    # Register as first hook to ensure it runs
     trainer._hooks = [debug_hook] + trainer._hooks
     trainer.resume_or_load(resume=False)
+
     try:
         trainer.train()
     except Exception as e:
         print(f"⚠️ Training crashed with error: {str(e)}")
-        # Force hook to save current state inside proper context
-        from detectron2.utils.events import EventStorage
-        with EventStorage() as storage:
-            try:
-                debug_hook.after_step()
-            except Exception as hook_error:
-                print(f"Failed to save debug state: {hook_error}")
-        raise  # Re-raise the original exception
+
+        if last_batch is not None:
+            print("\nDebug information for last processed batch:")
+            for item in last_batch:
+                if "file_name" in item:
+                    print(f"Image path: {item['file_name']}")
+                if "image" in item:
+                    print(f"Image shape: {item['image'].shape}")
+                if "instances" in item:
+                    print(f"Number of instances: {len(item['instances'])}")
+                print("---")
+        else:
+            print("No batch information available")
+
+        raise  # Re-raise the exception
 
 
 if __name__ == "__main__":
