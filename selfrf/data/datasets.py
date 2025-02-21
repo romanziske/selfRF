@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from torchsig.utils.types import Signal, create_signal_data
 from torchsig.transforms import Transform, Identity
 
-from selfrf.finetuning.detection.detectron2.trainer import _signal_to_coco_annotation
+from selfrf.finetuning.detection.detectron2.mapper import _signal_to_coco_annotation
 
 
 class RFCOCODataset(Dataset):

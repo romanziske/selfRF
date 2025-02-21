@@ -1,39 +1,123 @@
+
+from enum import Enum, unique
+from typing import NamedTuple, Optional
 from dataclasses import fields, dataclass
 import argparse
 import torch
 
+from detectron2.model_zoo import model_zoo
 from detectron2.config import get_cfg, CfgNode
-from detectron2 import model_zoo
+
+
+from typing import Optional, NamedTuple
+from enum import Enum
+
+
+class ModelConfig(NamedTuple):
+    """Model configuration with an optional config path and unique identifier.
+
+    Attributes:
+        path: Path to config file. Only required for non-lazy configs.
+        is_lazy: Indicates if model uses LazyConfig system.
+        identifier: Unique identifier to differentiate configs.
+    """
+    path: Optional[str] = None  # Optional for lazy configs
+    is_lazy: bool = False
+    identifier: str = ""
+
+
+class ModelType(Enum):
+    """Supported model architectures with their config paths."""
+    FASTER_RCNN_R50_FPN = ModelConfig(
+        path="COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml",
+        is_lazy=False,
+        identifier="faster_rcnn_r50_fpn"
+    )
+    VITDET_VIT_B = ModelConfig(
+        is_lazy=True,
+        identifier="vitdet_vit_b"
+    )
+    VITDET_VIT_L = ModelConfig(
+        is_lazy=True,
+        identifier="vitdet_vit_l"
+    )
+    VITDET_VIT_H = ModelConfig(
+        is_lazy=True,
+        identifier="vitdet_vit_h"
+    )
+
+    @property
+    def config_path(self) -> str:
+        """Get config path if available.
+
+        Returns:
+            str: Path to config file
+
+        Raises:
+            ValueError: If trying to access path for lazy config
+        """
+        if self.is_lazy_config:
+            raise ValueError(
+                f"Config path not available for lazy config: {self.name}"
+            )
+        return self.value.path
+
+    @property
+    def is_lazy_config(self) -> bool:
+        return self.value.is_lazy
+
+    @classmethod
+    def from_string(cls, name: str) -> 'ModelType':
+        """Get ModelType enum from string.
+
+        Args:
+            name: String representation of model type (e.g., 'vitdet-vit-l')
+
+        Returns:
+            ModelType: Corresponding enum value
+
+        Raises:
+            ValueError: If model type string is not recognized
+        """
+        try:
+            # Convert name to uppercase and replace hyphens with underscores
+            enum_name = name.upper().replace('-', '_')
+            model_type = cls[enum_name]
+            return model_type
+        except KeyError:
+            # Show available model types in error message
+            valid_types = [str(t) for t in cls]
+            raise ValueError(
+                f"Unknown model type: '{name}'. "
+                f"Valid types are: {', '.join(valid_types)}"
+            )
+
 
 # Default values as constants
+DEFAULT_MODEL_TYPE = ModelType.FASTER_RCNN_R50_FPN
 DEFAULT_DOWNLOAD = False
 DEFAULT_DATASET = "wideband_impaired"
 DEFAULT_WEIGHTS_PATH = ""
 DEFAULT_NUM_CLASSES = 61
 DEFAULT_MAX_ITER = 90_000
-DEFAULT_WARMUP_ITERS = 4000
 DEFAULT_BASE_LR = 0.0001
 DEFAULT_IMS_PER_BATCH = 8
 DEFAULT_CHECKPOINT_PERIOD = 1000
-DEFAULT_CLIP_VALUE = 1.0
-DEFAULT_CLIP_TYPE = "norm"
 
 
 @dataclass
 class Detectron2Config:
     """Configuration for Detectron2 model training."""
     root: str = ""
+    model_type: ModelType = DEFAULT_MODEL_TYPE
     dataset_name: str = DEFAULT_DATASET
     download: bool = DEFAULT_DOWNLOAD
     weights_path: str = DEFAULT_WEIGHTS_PATH
     num_classes: int = DEFAULT_NUM_CLASSES
     max_iter: int = DEFAULT_MAX_ITER
-    warmup_iters: int = DEFAULT_WARMUP_ITERS
     base_lr: float = DEFAULT_BASE_LR
     ims_per_batch: int = DEFAULT_IMS_PER_BATCH
     checkpoint_period: int = DEFAULT_CHECKPOINT_PERIOD
-    clip_value: float = DEFAULT_CLIP_VALUE
-    clip_type: str = DEFAULT_CLIP_TYPE
 
 
 def add_detectron2_config_args(parser: argparse.ArgumentParser) -> None:
@@ -43,6 +127,13 @@ def add_detectron2_config_args(parser: argparse.ArgumentParser) -> None:
         type=str,
         default='',
         help='Root directory for dataset'
+    )
+    parser.add_argument(
+        '--model-type',
+        type=ModelType.from_string,
+        choices=list(ModelType),
+        default=DEFAULT_MODEL_TYPE,
+        help='Model architecture type (e.g., vitdet-vit-l, vitdet-vit-b)'
     )
     parser.add_argument(
         '--dataset-name',
@@ -75,12 +166,6 @@ def add_detectron2_config_args(parser: argparse.ArgumentParser) -> None:
         help='Maximum number of training iterations'
     )
     parser.add_argument(
-        '--warmup-iters',
-        type=int,
-        default=DEFAULT_WARMUP_ITERS,
-        help='Number of warmup iterations'
-    )
-    parser.add_argument(
         '--base-lr',
         type=float,
         default=DEFAULT_BASE_LR,
@@ -97,19 +182,6 @@ def add_detectron2_config_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=DEFAULT_CHECKPOINT_PERIOD,
         help='Checkpoint save frequency'
-    )
-    parser.add_argument(
-        '--clip-value',
-        type=float,
-        default=DEFAULT_CLIP_VALUE,
-        help='Gradient clipping value'
-    )
-    parser.add_argument(
-        '--clip-type',
-        type=str,
-        choices=['value', 'norm'],
-        default=DEFAULT_CLIP_TYPE,
-        help='Gradient clipping type'
     )
 
 
@@ -146,7 +218,6 @@ def build_detectron2_config(config: Detectron2Config = Detectron2Config()) -> Cf
     cfg.INPUT.MAX_SIZE_TRAIN = 512
     cfg.INPUT.MIN_SIZE_TEST = 512
     cfg.INPUT.MAX_SIZE_TEST = 512
-    cfg.INPUT.RANDOM_FLIP = "none"
 
     # Model parameters
     cfg.MODEL.WEIGHTS = config.weights_path
@@ -159,12 +230,7 @@ def build_detectron2_config(config: Detectron2Config = Detectron2Config()) -> Cf
     # Training parameters
     cfg.SOLVER.IMS_PER_BATCH = config.ims_per_batch
     cfg.SOLVER.BASE_LR = config.base_lr
-    cfg.SOLVER.WARMUP_ITERS = config.warmup_iters
     cfg.SOLVER.MAX_ITER = config.max_iter
-    cfg.SOLVER.STEPS = ()
     cfg.SOLVER.CHECKPOINT_PERIOD = config.checkpoint_period
-    cfg.SOLVER.CLIP_GRADIENTS.ENABLED = True
-    cfg.SOLVER.CLIP_GRADIENTS.CLIP_VALUE = config.clip_value
-    cfg.SOLVER.CLIP_GRADIENTS.CLIP_TYPE = config.clip_type
 
     return cfg

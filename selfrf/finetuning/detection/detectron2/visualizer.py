@@ -10,10 +10,13 @@ import torch
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.utils.visualizer import Visualizer, ColorMode
 
-from selfrf.finetuning.detection.detectron2.trainer import rfcoco_mapper
+from selfrf.finetuning.detection.detectron2.register import register_rfcoco_dataset
+from selfrf.finetuning.detection.detectron2.mapper import rfcoco_mapper
 
 
 def visualize_dataset(n_sampels=100):
+    register_rfcoco_dataset(Path(
+        "/Users/roman/Repositories/selfRF/datasets/wideband"), "wideband_impaired", download=True)
     metadata = MetadataCatalog.get("rfcoco_train")
     dataset_dicts = DatasetCatalog.get("rfcoco_train")
     output_dir = Path("datasets/images")
@@ -56,3 +59,8 @@ def visualize_sample(img, metadata, predictions: Dict, path: Path):
     plt.imshow(vis_img)
     plt.axis('off')
     plt.savefig(path)
+
+
+if __name__ == "__main__":
+    visualize_dataset()
+    plt.show()

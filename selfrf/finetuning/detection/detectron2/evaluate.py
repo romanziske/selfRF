@@ -9,7 +9,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 from selfrf.finetuning.detection.detectron2.config import Detectron2Config, build_detectron2_config
 from selfrf.finetuning.detection.detectron2.register import register_rfcoco_dataset
-from selfrf.finetuning.detection.detectron2.trainer import rfcoco_mapper
+from selfrf.finetuning.detection.detectron2.mapper import rfcoco_mapper
 from selfrf.finetuning.detection.detectron2.visualizer import visualize_sample
 
 
