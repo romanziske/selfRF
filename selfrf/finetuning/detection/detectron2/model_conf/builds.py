@@ -7,9 +7,9 @@ from selfrf.finetuning.detection.detectron2.config import Detectron2Config, Mode
 # Import all build functions
 from .mask_rcnn_vitdet_b import (
     build_vitdet_b_model_config,
+    build_vitdet_b_optimizer_config,
     build_vitdet_b_training_config,
     build_vitdet_b_lr_multiplier_config,
-    build_vitdet_b_optimizer_config,
 )
 from .maks_rcnn_vitdet_l import (
     build_vitdet_l_model_config,
@@ -40,9 +40,9 @@ def get_build_functions(config: Detectron2Config) -> Tuple[Callable, Callable, C
     build_functions = {
         ModelType.VITDET_VIT_B: (
             build_vitdet_b_model_config,
-            build_vitdet_b_training_config,
-            build_vitdet_b_lr_multiplier_config,
             build_vitdet_b_optimizer_config,
+            build_vitdet_b_lr_multiplier_config,
+            build_vitdet_b_training_config,
         ),
         ModelType.VITDET_VIT_L: (
             build_vitdet_l_model_config,

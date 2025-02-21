@@ -66,7 +66,6 @@ def build_vitdet_b_lr_multiplier_config(config: Detectron2Config):
 def build_vitdet_b_optimizer_config():
     """Build optimizer configuration."""
     optimizer = model_zoo.get_config("common/optim.py").AdamW
-    print(optimizer)
     optimizer.params.lr_factor_func = partial(
         get_vit_lr_decay_rate,
         num_layers=12,
