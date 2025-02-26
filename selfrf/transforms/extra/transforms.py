@@ -10,7 +10,6 @@ from torchsig.transforms.functional import NumericParameter, to_distribution
 from copy import deepcopy
 import numpy as np
 
-from torchsig.utils.types import Signal
 from . import functional as F
 
 __all__ = [

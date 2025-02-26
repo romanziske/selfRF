@@ -1,9 +1,8 @@
 """Functional transforms
 """
-from typing import Callable, List, Literal, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 from torchsig.utils.dsp import low_pass, calculate_exponential_filter
-from numba import complex64, float64, njit
-from scipy import interpolate
+from numba import njit
 from scipy import signal as sp
 from functools import partial
 import numpy as np
@@ -21,22 +20,16 @@ __all__ = [
     "uniform_discrete_distribution",
     "uniform_continuous_distribution",
     "to_distribution",
-    "normalize",
     "resample",
     "make_sinc_filter",
     "awgn",
-    "time_varying_awgn",
     "impulsive_interference",
-    "rayleigh_fading",
-    "phase_offset",
     "interleave_complex",
-    "complex_to_2d",
     "real",
     "imag",
     "complex_magnitude",
     "wrapped_phase",
     "discrete_fourier_transform",
-    "spectrogram",
     "continuous_wavelet_transform",
     "time_shift",
     "time_crop",
@@ -44,28 +37,16 @@ __all__ = [
     "freq_shift_avoid_aliasing",
     "_fractional_shift_helper",
     "fractional_shift",
-    "iq_imbalance",
-    "spectral_inversion",
-    "channel_swap",
-    "time_reversal",
     "amplitude_reversal",
     "amplitude_scale",
     "roll_off",
-    "add_slope",
-    "mag_rescale",
-    "drop_samples",
-    "quantize",
     "clip",
     "random_convolve",
-    "agc",
-    "cut_out",
-    "patch_shuffle",
     "drop_spec_samples",
     "spec_patch_shuffle",
     "spec_translate",
     "spectrogram_image",
 ]
-
 
 FloatParameter = Union[Callable[[int], float],
                        float, Tuple[float, float], List]
@@ -166,39 +147,6 @@ def to_distribution(
     return param
 
 
-def normalize(
-    tensor: np.ndarray,
-    norm_order: Optional[Union[float, int, Literal["fro", "nuc"]]] = 2,
-    flatten: bool = False,
-) -> np.ndarray:
-    """Scale a tensor so that a specfied norm computes to 1. For detailed information, see :func:`numpy.linalg.norm.`
-        * For norm=1,      norm = max(sum(abs(x), axis=0)) (sum of the elements)
-        * for norm=2,      norm = sqrt(sum(abs(x)^2), axis=0) (square-root of the sum of squares)
-        * for norm=np.inf, norm = max(sum(abs(x), axis=1)) (largest absolute value)
-
-    Args:
-        tensor (:class:`numpy.ndarray`)):
-            (batch_size, vector_length, ...)-sized tensor to be normalized.
-
-        norm_order (:class:`int`)):
-            norm order to be passed to np.linalg.norm
-
-        flatten (:class:`bool`)):
-            boolean specifying if the input array's norm should be calculated on the flattened representation of the input tensor
-
-    Returns:
-        Tensor:
-            Normalized complex array.
-    """
-    if flatten:
-        flat_tensor = tensor.reshape(tensor.size)
-        norm = np.linalg.norm(flat_tensor, norm_order, keepdims=True)
-        return np.multiply(tensor, 1.0 / norm)
-
-    norm = np.linalg.norm(tensor, norm_order, keepdims=True)
-    return np.multiply(tensor, 1.0 / norm)
-
-
 def resample(
     tensor: np.ndarray,
     resamp_rate: float,
@@ -295,73 +243,6 @@ def awgn(tensor: np.ndarray, noise_power_db: float) -> np.ndarray:
     return tensor + (10.0 ** (noise_power_db / 20.0)) * (real_noise + 1j * imag_noise) / np.sqrt(2)
 
 
-def time_varying_awgn(
-    tensor: np.ndarray,
-    noise_power_db_low: float,
-    noise_power_db_high: float,
-    inflections: int,
-    random_regions: bool,
-) -> np.ndarray:
-    """Adds time-varying complex additive white Gaussian noise with power
-    levels in range (`noise_power_db_low`, `noise_power_db_high`) and with
-    `inflections` number of inflection points spread over the input tensor
-    randomly if `random_regions` is True or evely spread if False
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        noise_power_db_low (:obj:`float`):
-            Defined as 10*log10(E[|n|^2]).
-
-        noise_power_db_high (:obj:`float`):
-            Defined as 10*log10(E[|n|^2]).
-
-        inflections (:obj:`int`):
-            Number of inflection points for time-varying nature
-
-        random_regions (:obj:`bool`):
-            Specify if inflection points are randomly spread throughout tensor
-            or if evenly spread
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor with added noise.
-    """
-    real_noise: np.ndarray = np.random.randn(*tensor.shape)
-    imag_noise: np.ndarray = np.random.randn(*tensor.shape)
-    noise_power_db: np.ndarray = np.zeros(tensor.shape)
-
-    if inflections == 0:
-        inflection_indices = np.array([0, tensor.shape[0]])
-    else:
-        if random_regions:
-            inflection_indices = np.sort(
-                np.random.choice(
-                    tensor.shape[0], size=inflections, replace=False)
-            )
-            inflection_indices = np.append(inflection_indices, tensor.shape[0])
-            inflection_indices = np.insert(inflection_indices, 0, 0)
-        else:
-            inflection_indices = np.arange(inflections + 2) * int(
-                tensor.shape[0] / (inflections + 1)
-            )
-
-    for idx in range(len(inflection_indices) - 1):
-        start_idx = inflection_indices[idx]
-        stop_idx = inflection_indices[idx + 1]
-        duration = stop_idx - start_idx
-        start_power = noise_power_db_low if idx % 2 == 0 else noise_power_db_high
-        stop_power = noise_power_db_high if idx % 2 == 0 else noise_power_db_low
-        noise_power_db[start_idx:stop_idx] = np.linspace(
-            start_power, stop_power, duration
-        )
-
-    return tensor + (10.0 ** (noise_power_db / 20.0)) * (
-        real_noise + 1j * imag_noise
-    ) / np.sqrt(2)
-
-
 @njit(cache=False)
 def impulsive_interference(
     tensor: np.ndarray,
@@ -392,81 +273,6 @@ def impulsive_interference(
     return output
 
 
-def rayleigh_fading(
-    tensor: np.ndarray,
-    coherence_bandwidth: float,
-    power_delay_profile: np.ndarray,
-) -> np.ndarray:
-    """Applies Rayleigh fading channel to tensor. Taps are generated by
-    interpolating and filtering Gaussian taps.
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        coherence_bandwidth (:obj:`float`):
-            coherence_bandwidth relative to the sample rate in [0, 1.0]
-
-        power_delay_profile (:obj:`float`):
-            power_delay_profile assigned to channel
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone Rayleigh Fading.
-
-    """
-    num_taps = int(
-        np.ceil(1.0 / coherence_bandwidth)
-    )  # filter length to get desired coherence bandwidth
-    power_taps = np.sqrt(
-        np.interp(
-            np.linspace(0, 1.0, 100 * num_taps),
-            np.linspace(0, 1.0, len(power_delay_profile)),
-            power_delay_profile,
-        )
-    )
-    # Generate initial taps
-    rayleigh_taps = np.random.randn(num_taps) + 1j * np.random.randn(
-        num_taps
-    )  # multi-path channel
-
-    # Linear interpolate taps by a factor of 100 -- so we can get accurate coherence bandwidths
-    old_time = np.linspace(0, 1.0, num_taps, endpoint=True)
-    real_tap_function = interpolate.interp1d(old_time, rayleigh_taps.real)
-    imag_tap_function = interpolate.interp1d(old_time, rayleigh_taps.imag)
-
-    new_time = np.linspace(0, 1.0, 100 * num_taps, endpoint=True)
-    rayleigh_taps = real_tap_function(
-        new_time) + 1j * imag_tap_function(new_time)
-    rayleigh_taps *= power_taps
-
-    # Ensure that we maintain the same amount of power before and after the transform
-    input_power = np.linalg.norm(tensor)
-    tensor = sp.upfirdn(rayleigh_taps, tensor, up=100,
-                        down=100)[-tensor.shape[0]:]
-    output_power = np.linalg.norm(tensor)
-    tensor = np.multiply(input_power / output_power, tensor)
-    return tensor
-
-
-def phase_offset(tensor: np.ndarray, phase: float) -> np.ndarray:
-    """Applies a phase rotation to tensor
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        phase (:obj:`float`):
-            phase to rotate sample in [-pi, pi]
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone a phase rotation
-
-    """
-    return tensor * np.exp(1j * phase)
-
-
 def interleave_complex(tensor: np.ndarray) -> np.ndarray:
     """Converts complex vectors to real interleaved IQ vector
 
@@ -481,24 +287,6 @@ def interleave_complex(tensor: np.ndarray) -> np.ndarray:
     new_tensor = np.empty((tensor.shape[0] * 2,))
     new_tensor[::2] = np.real(tensor)
     new_tensor[1::2] = np.imag(tensor)
-    return new_tensor
-
-
-def complex_to_2d(tensor: np.ndarray) -> np.ndarray:
-    """Converts complex IQ to two channels representing real and imaginary
-
-    Args:
-        tensor (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Expanded vectors
-    """
-
-    new_tensor = np.zeros((2, tensor.shape[0]), dtype=np.float64)
-    new_tensor[0] = np.real(tensor).astype(np.float64)
-    new_tensor[1] = np.imag(tensor).astype(np.float64)
     return new_tensor
 
 
@@ -570,69 +358,6 @@ def discrete_fourier_transform(tensor: np.ndarray) -> np.ndarray:
             fft(tensor). normalization is 1/sqrt(n)
     """
     return np.fft.fft(tensor, norm="ortho")
-
-
-def spectrogram(
-    tensor: np.ndarray,
-    nperseg: int,
-    noverlap: int,
-    nfft: int,
-    detrend: Optional[str],
-    scaling: Optional[str],
-    window_fcn: Callable[[int], np.ndarray],
-    mode: str,
-) -> np.ndarray:
-    """Computes spectrogram of complex IQ vector
-
-    Args:
-        tensor (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        nperseg (:obj:`int`):
-            Length of each segment. If window is str or tuple, is set to 256,
-            and if window is array_like, is set to the length of the window.
-
-        noverlap (:obj:`int`):
-            Number of points to overlap between segments.
-            If None, noverlap = nperseg // 8.
-
-        nfft (:obj:`int`):
-            Length of the FFT used, if a zero padded FFT is desired.
-            If None, the FFT length is nperseg.
-
-        detrend : str or function or False, optional
-            Specifies how to detrend each segment. If detrend is a string, it is passed as the type
-            argument to the detrend function. If it is a function, it takes a segment and returns a
-            detrended segment. If detrend is False, no detrending is done. Defaults to ‘constant’.
-
-        scaling : { ‘density’, ‘spectrum’ }, optional
-            Selects between computing the power spectral density (‘density’) where Sxx has units of
-            V**2/Hz and computing the power spectrum (‘spectrum’) where Sxx has units of V**2, if
-            x is measured in V and fs is measured in Hz. Defaults to ‘density’.
-
-        window_fcn (:obj:`Callable`):
-            Function generating the window for each FFT
-
-        mode (:obj:`str`):
-            Mode of the spectrogram to be computed.
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Spectrogram of tensor along time dimension
-    """
-    _, _, spectrograms = sp.spectrogram(
-        tensor,
-        nperseg=nperseg,
-        noverlap=noverlap,
-        nfft=nfft,
-        detrend=detrend,
-        scaling=scaling,
-        window=window_fcn(nperseg),
-        return_onesided=False,
-        mode=mode,
-        axis=0,
-    )
-    return np.fft.fftshift(spectrograms, axes=0)
 
 
 def continuous_wavelet_transform(
@@ -865,90 +590,6 @@ def fractional_shift(
     return tensor
 
 
-def iq_imbalance(tensor: np.ndarray, iq_amplitude_imbalance_db: float, iq_phase_imbalance: float, iq_dc_offset_db: float) -> np.ndarray:
-    """Applies IQ imbalance to tensor
-
-    Args:
-        tensor (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor to be shifted in time.
-
-        iq_amplitude_imbalance_db (:obj:`float` or :class:`numpy.ndarray`):
-            IQ amplitude imbalance in dB
-
-        iq_phase_imbalance (:obj:`float` or :class:`numpy.ndarray`):
-            IQ phase imbalance in radians [-pi, pi]
-
-        iq_dc_offset_db (:obj:`float` or :class:`numpy.ndarray`):
-            IQ DC Offset in dB
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has an IQ imbalance applied across the time dimension of size tensor.shape
-    """
-    # amplitude imbalance
-    tensor = 10 ** (iq_amplitude_imbalance_db / 10.0) * np.real(tensor) + \
-        1j * 10 ** (iq_amplitude_imbalance_db / 10.0) * np.imag(tensor)
-
-    # phase imbalance
-    tensor = np.exp(-1j * iq_phase_imbalance / 2.0) * np.real(tensor) + \
-        np.exp(1j * (np.pi / 2.0 + iq_phase_imbalance / 2.0)) * np.imag(tensor)
-
-    tensor += 10 ** (iq_dc_offset_db / 10.0) * np.real(tensor) + \
-        1j * 10 ** (iq_dc_offset_db / 10.0) * np.imag(tensor)
-    return tensor
-
-
-def spectral_inversion(tensor: np.ndarray) -> np.ndarray:
-    """Applies a spectral inversion
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone a spectral inversion
-
-    """
-    tensor.imag *= -1
-    return tensor
-
-
-def channel_swap(tensor: np.ndarray) -> np.ndarray:
-    """Swap the I and Q channels of input complex data
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone channel swapping
-
-    """
-    real_component = tensor.real
-    imag_component = tensor.imag
-    new_tensor = np.empty(tensor.shape, dtype=tensor.dtype)
-    new_tensor.real = imag_component
-    new_tensor.imag = real_component
-    return new_tensor
-
-
-def time_reversal(tensor: np.ndarray) -> np.ndarray:
-    """Applies a time reversal to the input tensor
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone a time reversal
-
-    """
-    return np.flip(tensor, axis=0)
-
-
 def amplitude_reversal(tensor: np.ndarray) -> np.ndarray:
     """Applies an amplitude reversal to the input tensor by multiplying by -1
 
@@ -1032,153 +673,6 @@ def roll_off(
     return convolve_out[lidx:ridx]
 
 
-def add_slope(tensor: np.ndarray) -> np.ndarray:
-    """The slope between each sample and its preceeding sample is added to
-    every sample
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor with added noise.
-    """
-    slope = np.diff(tensor)
-    slope = np.insert(slope, 0, 0)
-    return tensor + slope
-
-
-def mag_rescale(
-    tensor: np.ndarray,
-    start: float,
-    scale: float,
-) -> np.ndarray:
-    """Apply a rescaling of input `scale` starting at time `start`
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        start (:obj:`float`):
-            Normalized start time of rescaling
-
-        scale (:obj:`float`):
-            Scaling factor
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone rescaling
-
-    """
-    start = int(tensor.shape[0] * start)
-    tensor[start:] *= scale
-    return tensor
-
-
-def drop_samples(
-    tensor: np.ndarray,
-    drop_starts: np.ndarray,
-    drop_sizes: np.ndarray,
-    fill: str,
-) -> np.ndarray:
-    """Drop samples at specified input locations/durations with fill technique
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        drop_starts (:class:`numpy.ndarray`):
-            Indices of where drops start
-
-        drop_sizes (:class:`numpy.ndarray`):
-            Durations of each drop instance
-
-        fill (:obj:`str`):
-            String specifying how the dropped samples should be replaced
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone the dropped samples
-
-    """
-    for idx, drop_start in enumerate(drop_starts):
-        if fill == "ffill":
-            drop_region = np.full(
-                drop_sizes[idx], tensor[drop_start - 1], dtype=np.complex128
-            )
-        elif fill == "bfill":
-            drop_region = np.full(
-                drop_sizes[idx],
-                tensor[drop_start + drop_sizes[idx]],
-                dtype=np.complex128,
-            )
-        elif fill == "mean":
-            drop_region = np.full(drop_sizes[idx], np.mean(
-                tensor), dtype=np.complex128)
-        elif fill == "zero":
-            drop_region = np.zeros(drop_sizes[idx], dtype=np.complex128)
-        else:
-            raise ValueError(
-                "fill expects ffill, bfill, mean, or zero. Found {}".format(
-                    fill)
-            )
-
-        # Update drop region
-        # breakpoint()
-        tensor[drop_start: drop_start + drop_sizes[idx]] = drop_region
-
-    return tensor
-
-
-def quantize(
-    tensor: np.ndarray,
-    num_levels: int,
-    round_type: str = "floor",
-) -> np.ndarray:
-    """Quantize the input to the number of levels specified
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        num_levels (:obj:`int`):
-            Number of quantization levels
-
-        round_type (:obj:`str`):
-            Quantization rounding. Options: 'floor', 'nearest'
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone quantization
-
-    """
-    # Setup quantization resolution/bins
-    max_value = max(np.abs(tensor)) + 1e-9
-    bins = np.linspace(-max_value, max_value, num_levels + 1)
-
-    # Digitize to bins
-    quantized_real = np.digitize(tensor.real, bins)
-    quantized_imag = np.digitize(tensor.imag, bins)
-
-    if round_type == "floor":
-        quantized_real -= 1
-        quantized_imag -= 1
-
-    # Revert to values
-    quantized_real = bins[quantized_real]
-    quantized_imag = bins[quantized_imag]
-
-    if round_type == "nearest":
-        bin_size = np.diff(bins)[0]
-        quantized_real -= bin_size / 2
-        quantized_imag -= bin_size / 2
-
-    quantized_tensor = quantized_real + 1j * quantized_imag
-
-    return quantized_tensor
-
-
 def clip(tensor: np.ndarray, clip_percentage: float) -> np.ndarray:
     """Clips input tensor's values above/below a specified percentage of the
     max/min of the input tensor
@@ -1242,213 +736,6 @@ def random_convolve(
     lidx = (len(convolve_out) - len(tensor)) // 2
     ridx = lidx + len(tensor)
     return (1 - alpha) * tensor + alpha * convolve_out[lidx:ridx]
-
-
-@njit(
-    complex64[:](
-        complex64[:],
-        float64,
-        float64,
-        float64,
-        float64,
-        float64,
-        float64,
-        float64,
-        float64,
-        float64,
-    ),
-    cache=False,
-)
-def agc(
-    tensor: np.ndarray,
-    initial_gain_db: float,
-    alpha_smooth: float,
-    alpha_track: float,
-    alpha_overflow: float,
-    alpha_acquire: float,
-    ref_level_db: float,
-    track_range_db: float,
-    low_level_db: float,
-    high_level_db: float,
-) -> np.ndarray:
-    """AGC implementation
-
-    Args:
-         tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor to be agc'd
-
-        initial_gain_db (:obj:`float`):
-            Initial gain value in linear units
-
-        alpha_smooth (:obj:`float`):
-            Alpha for averaging the measured signal level level_n = level_n*alpha + level_n-1*(1 - alpha)
-
-        alpha_track (:obj:`float`):
-            Amount by which to adjust gain when in tracking state
-
-        alpha_overflow (:obj:`float`):
-            Amount by which to adjust gain when in overflow state [level_db + gain_db] >= max_level
-
-        alpha_acquire (:obj:`float`):
-            Amount by which to adjust gain when in acquire state abs([ref_level_db - level_db - gain_db]) >= track_range_db
-
-        ref_level_db (:obj:`float`):
-            Level to which we intend to adjust gain to achieve
-
-        track_range_db (:obj:`float`):
-            Range from ref_level_linear for which we can deviate before going into acquire state
-
-        low_level_db (:obj:`float`):
-            Level below which we disable AGC
-
-        high_level_db (:obj:`float`):
-            Level above which we go into overflow state
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor with AGC applied
-
-    """
-    output = np.zeros_like(tensor)
-    gain_db = initial_gain_db
-    level_db = 0.0
-    for sample_idx, sample in enumerate(tensor):
-        if np.abs(sample) == 0:
-            level_db = -200
-        elif sample_idx == 0:  # first sample, no smoothing
-            level_db = np.log(np.abs(sample))
-        else:
-            level_db = level_db * alpha_smooth + np.log(np.abs(sample)) * (
-                1 - alpha_smooth
-            )
-        output_db = level_db + gain_db
-        diff_db = ref_level_db - output_db
-
-        if level_db <= low_level_db:
-            alpha_adjust = 0.0
-        elif output_db >= high_level_db:
-            alpha_adjust = alpha_overflow
-        elif abs(diff_db) > track_range_db:
-            alpha_adjust = alpha_acquire
-        else:
-            alpha_adjust = alpha_track
-
-        gain_db += diff_db * alpha_adjust
-        output[sample_idx] = tensor[sample_idx] * np.exp(gain_db)
-    return output
-
-
-def cut_out(
-    tensor: np.ndarray,
-    cut_start: float,
-    cut_dur: float,
-    cut_type: str,
-) -> np.ndarray:
-    """Performs the CutOut using the input parameters
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        cut_start: (:obj:`float`):
-            Start of cut region in range [0.0,1.0)
-
-        cut_dur: (:obj:`float`):
-            Duration of cut region in range (0.0,1.0]
-
-        cut_type: (:obj:`str`):
-            String specifying type of data to fill in cut region with
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone cut out
-
-    """
-    num_iq_samples = tensor.shape[0]
-    cut_start = int(cut_start * num_iq_samples)
-
-    # Create cut mask
-    cut_mask_length = int(num_iq_samples * cut_dur)
-    if cut_mask_length + cut_start > num_iq_samples:
-        cut_mask_length = num_iq_samples - cut_start
-
-    if cut_type == "zeros":
-        cut_mask = np.zeros(cut_mask_length, dtype=np.complex64)
-    elif cut_type == "ones":
-        cut_mask = np.ones(cut_mask_length) + 1j * np.ones(cut_mask_length)
-    elif cut_type == "low_noise":
-        real_noise = np.random.randn(cut_mask_length)
-        imag_noise = np.random.randn(cut_mask_length)
-        noise_power_db = -100
-        cut_mask = (
-            (10.0 ** (noise_power_db / 20.0))
-            * (real_noise + 1j * imag_noise)
-            / np.sqrt(2)
-        )
-    elif cut_type == "avg_noise":
-        real_noise = np.random.randn(cut_mask_length)
-        imag_noise = np.random.randn(cut_mask_length)
-        avg_power = np.mean(np.abs(tensor) ** 2)
-        cut_mask = avg_power * (real_noise + 1j * imag_noise) / np.sqrt(2)
-    elif cut_type == "high_noise":
-        real_noise = np.random.randn(cut_mask_length)
-        imag_noise = np.random.randn(cut_mask_length)
-        noise_power_db = 40
-        cut_mask = (
-            (10.0 ** (noise_power_db / 20.0))
-            * (real_noise + 1j * imag_noise)
-            / np.sqrt(2)
-        )
-    else:
-        raise ValueError(
-            "cut_type must be: zeros, ones, low_noise, avg_noise, or high_noise. Found: {}".format(
-                cut_type
-            )
-        )
-
-    # Insert cut mask into tensor
-    tensor[cut_start: cut_start + cut_mask_length] = cut_mask
-
-    return tensor
-
-
-def patch_shuffle(
-    tensor: np.ndarray,
-    patch_size: int,
-    shuffle_ratio: float,
-) -> np.ndarray:
-    """Apply shuffling of patches specified by `num_patches`
-
-    Args:
-        tensor: (:class:`numpy.ndarray`):
-            (batch_size, vector_length, ...)-sized tensor.
-
-        patch_size (:obj:`int`):
-            Size of each patch to shuffle
-
-        shuffle_ratio (:obj:`float`):
-            Ratio of patches to shuffle
-
-    Returns:
-        transformed (:class:`numpy.ndarray`):
-            Tensor that has undergone patch shuffling
-
-    """
-    num_patches = int(tensor.shape[0] / patch_size)
-    num_to_shuffle = int(num_patches * shuffle_ratio)
-    patches_to_shuffle = np.random.choice(
-        num_patches,
-        replace=False,
-        size=num_to_shuffle,
-    )
-
-    for patch_idx in patches_to_shuffle:
-        patch_start = int(patch_idx * patch_size)
-        patch = tensor[patch_start: patch_start + patch_size]
-        np.random.shuffle(patch)
-        tensor[patch_start: patch_start + patch_size] = patch
-
-    return tensor
 
 
 def drop_spec_samples(

@@ -1,20 +1,21 @@
 """TorchSig legacy Transforms from v0.6.0
 """
 
-from typing import Any, Callable, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, List, Literal, Optional, Tuple, Union
 
 import torch
-from torchsig.utils.dataset import SignalDataset
-from torchsig.utils.types import *
-from torchsig.utils.dsp import MAX_SIGNAL_UPPER_EDGE_FREQ, MAX_SIGNAL_LOWER_EDGE_FREQ
 from scipy import signal as sp
 from copy import deepcopy
 import numpy as np
-import warnings
 
 from torchsig.utils.types import Signal
+from torchsig.utils.dataset import SignalDataset
+from torchsig.utils.types import *
+from torchsig.utils.dsp import MAX_SIGNAL_UPPER_EDGE_FREQ, MAX_SIGNAL_LOWER_EDGE_FREQ
+from torchsig.transforms import Transform
+from torchsig.transforms import functional as F
 
-import selfrf.transforms.extra.torchsig_legacy_functional as F
+import selfrf.transforms.extra.torchsig_legacy_functional as F_LEGACY
 from .torchsig_legacy_functional import (
     FloatParameter,
     IntParameter,
@@ -40,21 +41,16 @@ __all__ = [
     "RandomResample",
     "TargetSNR",
     "AddNoise",
-    "TimeVaryingNoise",
-    "RayleighFadingChannel",
     "ImpulseInterferer",
     "RandomPhaseShift",
     "InterleaveComplex",
-    "ComplexTo2D",
     "ToTensor",
-    "ToSpectrogramTensor",
     "Real",
     "Imag",
     "ComplexMagnitude",
     "WrappedPhase",
     "DiscreteFourierTransform",
     "ChannelConcatIQDFT",
-    "Spectrogram",
     "ContinuousWavelet",
     "ReshapeTransform",
     "RandomTimeShift",
@@ -69,25 +65,16 @@ __all__ = [
     "AutomaticGainControl",
     "IQImbalance",
     "RollOff",
-    "AddSlope",
     "SpectralInversion",
-    "ChannelSwap",
-    "RandomMagRescale",
-    "RandomDropSamples",
-    "Quantize",
     "Clip",
     "RandomConvolve",
     "DatasetBasebandMixUp",
     "DatasetBasebandCutMix",
-    "CutOut",
-    "PatchShuffle",
     "DatasetWidebandCutMix",
     "DatasetWidebandMixUp",
     "SpectrogramRandomResizeCrop",
-    "SpectrogramDropSamples",
     "SpectrogramPatchShuffle",
     "SpectrogramTranslation",
-    # "SpectrogramMosaicCrop",
     "SpectrogramMosaicDownsample",
     "SpectrogramImage",
 ]
@@ -97,84 +84,6 @@ def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx]
-
-
-class Transform:
-    """An abstract class representing a Transform that can either work on
-    targets or data
-
-    """
-
-    def __init__(self, seed: Optional[int] = None) -> None:
-        if seed is not None:
-            warnings.warn(
-                "Seeding transforms is deprecated and does nothing", DeprecationWarning
-            )
-        self.string = self.__class__.__name__ + "()"
-        self.random_generator = np.random.default_rng()
-
-    def __call__(self, data: Any) -> Any:
-        raise NotImplementedError
-
-    def __repr__(self) -> str:
-        return self.string
-
-
-class Compose(Transform):
-    """Composes several transforms together.
-
-    Args:
-        transforms (list of ``Transform`` objects):
-            list of transforms to compose.
-
-    Example:
-        >>> import torchsig.transforms as ST
-        >>> transform = ST.Compose([ST.AddNoise(noise_power_db=10), ST.InterleaveComplex()])
-
-    """
-
-    def __init__(self, transforms: List[Callable], **kwargs) -> None:
-        super(Compose, self).__init__(**kwargs)
-        self.transforms = transforms
-
-    def __call__(self, data: Any) -> Any:
-        for t in self.transforms:
-            data = t(data)
-        return data
-
-    def __repr__(self) -> str:
-        return "\n".join([str(t) for t in self.transforms])
-
-
-class MultiViewTransform(Transform):
-    """Transforms an signal into multiple views.
-
-    Args:
-        transforms:
-            A sequence of transforms. Every transform creates a new view.
-
-    """
-
-    def __init__(self, transforms: Sequence[Compose]) -> None:
-        super().__init__()
-        self.transforms = transforms
-
-    def __call__(self, data: Any) -> Any:
-        """Creates independent views with separate data copies"""
-        views = []
-        for transform in self.transforms:
-            # Create fresh copy for each transform pipeline
-            data_copy = deepcopy(data)
-            views.append(transform(data_copy))
-        return views
-
-    def __repr__(self) -> str:
-        format_string = self.__class__.__name__ + "("
-        for t in self.transforms:
-            format_string += "\n"
-            format_string += f"    {t}"
-        format_string += "\n)"
-        return format_string
 
 
 class Identity(Transform):
@@ -690,7 +599,7 @@ class RandomResample(SignalTransform):
         if not has_rf_metadata(signal["metadata"]):
             return signal
         # Apply transform to data
-        signal["data"]["samples"] = F.resample(
+        signal["data"]["samples"] = F_LEGACY.resample(
             signal["data"]["samples"], params[0], self.num_iq_samples, self.keep_samples)
 
         return signal
@@ -786,7 +695,7 @@ class TargetSNR(SignalTransform):
         noise_power_db = signal_power_db - target_snr_db
 
         if not has_modulated_rf_metadata(signal["metadata"]):
-            signal["data"]["samples"] = F.awgn(
+            signal["data"]["samples"] = F_LEGACY.awgn(
                 signal["data"]["samples"], noise_power_db)
             return signal
 
@@ -802,7 +711,7 @@ class TargetSNR(SignalTransform):
             noise_power_db += 10 * \
                 np.log10(signal["metadata"][0]["samples_per_symbol"])
 
-        signal["data"]["samples"] = F.awgn(
+        signal["data"]["samples"] = F_LEGACY.awgn(
             signal["data"]["samples"], noise_power_db)
 
         return signal
@@ -813,247 +722,6 @@ class TargetSNR(SignalTransform):
             return signal
 
         signal["metadata"][0]["snr"] = target_snr_db
-        return signal
-
-
-class AddNoise(SignalTransform):
-    """Add random AWGN at specified power levels
-
-    Note:
-        Differs from the TargetSNR() in that this transform adds
-        noise at a specified power level, whereas TargetSNR()
-        assumes a basebanded signal and adds noise to achieve a specified SNR
-        level for the signal of interest. This transform,
-        AddNoise() is useful for simply adding a randomized
-        level of noise to either a narrowband or wideband input.
-
-    Args:
-        noise_power_db (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            Defined as 10*log10(np.mean(np.abs(x)**2)/np.mean(np.abs(n)**2)) if in dB,
-            np.mean(np.abs(x)**2)/np.mean(np.abs(n)**2) if linear.
-
-            * If Callable, produces a sample by calling target_snr()
-            * If int or float, target_snr is fixed at the value provided
-            * If list, target_snr is any element in the list
-            * If tuple, target_snr is in range of (tuple[0], tuple[1])
-
-        input_noise_floor_db (:obj:`float`):
-            The noise floor of the input data in dB
-
-        linear (:obj:`bool`):
-            If True, target_snr and signal_power is on linear scale not dB.
-
-    Example:
-        >>> import torchsig.transforms as ST
-        >>> # Added AWGN power range is (-40, -20) dB
-        >>> transform = ST.AddNoise((-40, -20))
-
-    """
-
-    def __init__(
-        self,
-        noise_power_db: NumericParameter = (-80, -60),
-        input_noise_floor_db: float = 0.0,
-        **kwargs,
-    ) -> None:
-        super(AddNoise, self).__init__(**kwargs)
-        self.noise_power_db = to_distribution(
-            noise_power_db, self.random_generator)
-        self.input_noise_floor_db = input_noise_floor_db
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "noise_power_db={}, ".format(noise_power_db)
-            + "input_noise_floor_db={}, ".format(input_noise_floor_db)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.noise_power_db(), self.input_noise_floor_db)
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        noise_power_db, _ = params
-        signal["data"]["samples"] = F.awgn(
-            signal["data"]["samples"], noise_power_db)
-        return signal
-
-    def transform_meta(self, signal: Signal, params: tuple) -> Signal:
-        if not has_modulated_rf_metadata(signal["metadata"]):
-            return signal
-
-        noise_power_db, noise_floor_db = params
-        for meta in signal["metadata"]:
-            meta["snr"] = (
-                meta["snr"] - noise_power_db) if noise_power_db > noise_floor_db else meta["snr"]
-        return signal
-
-
-class TimeVaryingNoise(SignalTransform):
-    """Add time-varying random AWGN at specified input parameters
-
-    Args:
-        noise_power_db_low (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            Defined as 10*log10(np.mean(np.abs(x)**2)/np.mean(np.abs(n)**2)) if in dB,
-            np.mean(np.abs(x)**2)/np.mean(np.abs(n)**2) if linear.
-            * If Callable, produces a sample by calling noise_power_db_low()
-            * If int or float, noise_power_db_low is fixed at the value provided
-            * If list, noise_power_db_low is any element in the list
-            * If tuple, noise_power_db_low is in range of (tuple[0], tuple[1])
-
-        noise_power_db_high (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            Defined as 10*log10(np.mean(np.abs(x)**2)/np.mean(np.abs(n)**2)) if in dB,
-            np.mean(np.abs(x)**2)/np.mean(np.abs(n)**2) if linear.
-            * If Callable, produces a sample by calling noise_power_db_low()
-            * If int or float, noise_power_db_low is fixed at the value provided
-            * If list, noise_power_db_low is any element in the list
-            * If tuple, noise_power_db_low is in range of (tuple[0], tuple[1])
-
-        inflections (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            Number of inflection points in time-varying noise
-            * If Callable, produces a sample by calling inflections()
-            * If int or float, inflections is fixed at the value provided
-            * If list, inflections is any element in the list
-            * If tuple, inflections is in range of (tuple[0], tuple[1])
-
-        random_regions (:py:class:`~Callable`, :obj:`bool`, :obj:`list`, :obj:`tuple`):
-            If inflections > 0, random_regions specifies whether each
-            inflection point should be randomly selected or evenly divided
-            among input data
-            * If Callable, produces a sample by calling random_regions()
-            * If bool, random_regions is fixed at the value provided
-            * If list, random_regions is any element in the list
-
-        linear (:obj:`bool`):
-            If True, powers input are on linear scale not dB.
-
-    """
-
-    def __init__(
-        self,
-        noise_power_db_low: NumericParameter = (-80, -60),
-        noise_power_db_high: NumericParameter = (-40, -20),
-        inflections: IntParameter = [int(0), int(10)],
-        random_regions: Union[List, bool] = True,
-        **kwargs,
-    ) -> None:
-        super(TimeVaryingNoise, self).__init__(**kwargs)
-        self.noise_power_db_low = to_distribution(
-            noise_power_db_low, self.random_generator
-        )
-        self.noise_power_db_high = to_distribution(
-            noise_power_db_high, self.random_generator
-        )
-        self.inflections = to_distribution(inflections, self.random_generator)
-        self.random_regions = to_distribution(
-            random_regions, self.random_generator)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "noise_power_db_low={}, ".format(noise_power_db_low)
-            + "noise_power_db_high={}, ".format(noise_power_db_high)
-            + "inflections={}, ".format(inflections)
-            + "random_regions={}, ".format(random_regions)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (
-            self.noise_power_db_low(),
-            self.noise_power_db_high(),
-            self.inflections(),
-            self.random_regions(),
-        )
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        noise_power_db_low, noise_power_db_high, inflections, random_regions = params
-        signal["data"]["samples"] = F.time_varying_awgn(
-            signal["data"]["samples"],
-            noise_power_db_low,
-            noise_power_db_high,
-            inflections,
-            random_regions,
-        )
-        return signal
-
-    def transform_meta(self, signal: Signal, params: tuple) -> Signal:
-        if not has_modulated_rf_metadata(signal["metadata"]):
-            return signal
-
-        noise_power_db_low, noise_power_db_high, _, _ = params
-        noise_power_db_change = np.abs(
-            noise_power_db_high - noise_power_db_low)
-        avg_noise_power_db = (
-            min(noise_power_db_low, noise_power_db_high) +
-            noise_power_db_change / 2
-        )
-        for meta in signal["metadata"]:
-            meta["snr"] -= avg_noise_power_db
-        return signal
-
-
-class RayleighFadingChannel(SignalTransform):
-    """Applies Rayleigh fading channel to tensor.
-
-    Note:
-        A Rayleigh fading channel can be modeled as an FIR filter with Gaussian distributed taps which vary over time.
-        The length of the filter determines the coherence bandwidth of the channel and is inversely proportional to
-        the delay spread. The rate at which the channel taps vary over time is related to the coherence time and this is
-        inversely proportional to the maximum Doppler spread. This time variance is not included in this model.
-
-    Args:
-        coherence_bandwidth (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            * If Callable, produces a sample by calling coherence_bandwidth()
-            * If int or float, coherence_bandwidth is fixed at the value provided
-            * If list, coherence_bandwidth is any element in the list
-            * If tuple, coherence_bandwidth is in range of (tuple[0], tuple[1])
-
-        power_delay_profile (:obj:`list`, :obj:`tuple`):
-            A list of positive values assigning power to taps of the channel model. When the number of taps
-            exceeds the number of items in the provided power_delay_profile, the list is linearly interpolated
-            to provide values for each tap of the channel
-
-    Example:
-        >>> import torchsig.transforms as ST
-        >>> # Rayleigh Fading with coherence bandwidth uniformly distributed between fs/100 and fs/10
-        >>> transform = ST.RayleighFadingChannel(lambda size: np.random.uniform(.01, .1, size))
-        >>> # Rayleigh Fading with coherence bandwidth normally distributed clipped between .01 and .1
-        >>> transform = ST.RayleighFadingChannel(lambda size: np.clip(np.random.normal(0, .1, size), .01, .1))
-        >>> # Rayleigh Fading with coherence bandwidth uniformly distributed between fs/100 and fs/10
-        >>> transform = ST.RayleighFadingChannel((.01, .1))
-        >>> # Rayleigh Fading with coherence bandwidth either .02 or .01
-        >>> transform = ST.RayleighFadingChannel([.02, .01])
-        >>> # Rayleigh Fading with fixed coherence bandwidth at .1
-        >>> transform = ST.RayleighFadingChannel(.1)
-        >>> # Rayleigh Fading with fixed coherence bandwidth at .1 and pdp (1.0, .7, .1)
-        >>> transform = ST.RayleighFadingChannel((.01, .1), power_delay_profile=(1.0, .7, .1))
-    """
-
-    def __init__(
-        self,
-        coherence_bandwidth: FloatParameter = (0.01, 0.1),
-        power_delay_profile: Union[Tuple, List, np.ndarray] = (1, 1),
-        **kwargs,
-    ) -> None:
-        super(RayleighFadingChannel, self).__init__(**kwargs)
-        self.coherence_bandwidth = to_distribution(
-            coherence_bandwidth, self.random_generator)
-        self.power_delay_profile = np.asarray(power_delay_profile)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "coherence_bandwidth={}, ".format(coherence_bandwidth)
-            + "power_delay_profile={}".format(power_delay_profile)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.coherence_bandwidth(),)
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        coherence_bw = params[0]
-        signal["data"]["samples"] = F.rayleigh_fading(
-            signal["data"]["samples"], coherence_bw, self.power_delay_profile
-        )
         return signal
 
 
@@ -1099,7 +767,7 @@ class ImpulseInterferer(SignalTransform):
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
         amp, pulse_offset = params
         pulse_offset = np.clip(pulse_offset, 0, 1.0)
-        signal["data"]["samples"] = F.impulsive_interference(
+        signal["data"]["samples"] = F_LEGACY.impulsive_interference(
             signal["data"]["samples"], amp, pulse_offset
         )
         return signal
@@ -1163,23 +831,8 @@ class InterleaveComplex(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.interleave_complex(
+        signal["data"]["samples"] = F_LEGACY.interleave_complex(
             signal["data"]["samples"])
-        return signal
-
-
-class ComplexTo2D(SignalTransform):
-    """Takes a vector of complex IQ samples and converts two channels of real
-    and imaginary parts
-
-    Example:
-        >>> import torchsig.transforms as ST
-        >>> transform = ST.ComplexTo2D()
-
-    """
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.complex_to_2d(signal["data"]["samples"])
         return signal
 
 
@@ -1200,28 +853,6 @@ class ToTensor(SignalTransform):
         return signal
 
 
-class ToSpectrogramTensor(SignalTransform):
-    """Converts a numpy array to a PyTorch tensor to shape (C, X, Y), where C is the number of channels (1), X is the number of time steps and y is the number of frequency bins.
-    """
-
-    def __init__(
-        self,
-    ) -> None:
-        super(ToSpectrogramTensor, self).__init__()
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        # check if data is in spectrogram format
-        if len(signal["data"]["samples"].shape) != 2:
-            raise ValueError("Data must be in spectrogram format (2D)")
-
-        # convert to torch tensor
-        output = torch.from_numpy(signal["data"]["samples"].astype(np.float32))
-
-        # add channel dimension
-        signal["data"]["samples"] = output.unsqueeze(0)
-        return signal
-
-
 class Real(SignalTransform):
     """Takes a vector of complex IQ samples and returns Real portions
 
@@ -1232,7 +863,7 @@ class Real(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.real(signal["data"]["samples"])
+        signal["data"]["samples"] = F_LEGACY.real(signal["data"]["samples"])
         return signal
 
 
@@ -1246,7 +877,7 @@ class Imag(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.imag(signal["data"]["samples"])
+        signal["data"]["samples"] = F_LEGACY.imag(signal["data"]["samples"])
         return signal
 
 
@@ -1260,7 +891,7 @@ class ComplexMagnitude(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.complex_magnitude(
+        signal["data"]["samples"] = F_LEGACY.complex_magnitude(
             signal["data"]["samples"])
         return signal
 
@@ -1275,7 +906,8 @@ class WrappedPhase(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.wrapped_phase(signal["data"]["samples"])
+        signal["data"]["samples"] = F_LEGACY.wrapped_phase(
+            signal["data"]["samples"])
         return signal
 
 
@@ -1289,7 +921,7 @@ class DiscreteFourierTransform(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.discrete_fourier_transform(
+        signal["data"]["samples"] = F_LEGACY.discrete_fourier_transform(
             signal["data"]["samples"]
         )
         return signal
@@ -1309,118 +941,11 @@ class ChannelConcatIQDFT(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        dft_data = F.discrete_fourier_transform(signal["data"]["samples"])
+        dft_data = F_LEGACY.discrete_fourier_transform(
+            signal["data"]["samples"])
         iq_data = F.complex_to_2d(signal["data"]["samples"])
         dft_data = F.complex_to_2d(dft_data)
         signal["data"]["samples"] = np.concatenate([iq_data, dft_data], axis=0)
-        return signal
-
-
-class Spectrogram(SignalTransform):
-    """Calculates power spectral density over time
-
-    Args:
-        nperseg (:obj:`int`):
-            Length of each segment. If window is str or tuple, is set to 256,
-            and if window is array_like, is set to the length of the window.
-
-        noverlap (:obj:`int`):
-            Number of points to overlap between segments.
-            If None, noverlap = nperseg // 8.
-
-        nfft (:obj:`int`):
-            Length of the FFT used, if a zero padded FFT is desired.
-            If None, the FFT length is nperseg.
-
-        detrend : str or function or False, optional
-            Specifies how to detrend each segment. If detrend is a string, it is passed as the type
-            argument to the detrend function. If it is a function, it takes a segment and returns a
-            detrended segment. If detrend is False, no detrending is done. Defaults to ‘constant’.
-
-        scaling : { ‘density’, ‘spectrum’ }, optional
-            Selects between computing the power spectral density (‘density’) where Sxx has units of
-            V**2/Hz and computing the power spectrum (‘spectrum’) where Sxx has units of V**2, if
-            x is measured in V and fs is measured in Hz. Defaults to ‘density’.
-
-        window_fcn (:obj:`str`):
-            Window to be used in spectrogram operation.
-            Default value is 'np.blackman'.
-
-        mode (:obj:`str`):
-            Mode of the spectrogram to be computed.
-            Default value is 'psd'.
-
-    Example:
-        >>> import torchsig.transforms as ST
-        >>> # Spectrogram with seg_size=256, overlap=64, nfft=256, window=blackman_harris
-        >>> transform = ST.Spectrogram()
-        >>> # Spectrogram with seg_size=128, overlap=64, nfft=128, window=blackman_harris (2x oversampled in time)
-        >>> transform = ST.Spectrogram(nperseg=128, noverlap=64)
-        >>> # Spectrogram with seg_size=128, overlap=0, nfft=128, window=blackman_harris (critically sampled)
-        >>> transform = ST.Spectrogram(nperseg=128, noverlap=0)
-        >>> # Spectrogram with seg_size=128, overlap=64, nfft=128, window=blackman_harris (2x oversampled in frequency)
-        >>> transform = ST.Spectrogram(nperseg=128, noverlap=64, nfft=256)
-        >>> # Spectrogram with seg_size=128, overlap=64, nfft=128, window=rectangular
-        >>> transform = ST.Spectrogram(nperseg=128, noverlap=64, nfft=256, window_fcn=np.ones)
-        >>> # Spectrogram with seg_size=128, overlap=64, nfft=128, window=rectangular, detrend=constant, scaling=density
-        >>> transform = ST.Spectrogram(nperseg=128, noverlap=64, nfft=256, window_fcn=np.ones, detrend='constant', scaling='density')
-
-    """
-
-    def __init__(
-        self,
-        nperseg: int = 256,
-        noverlap: Optional[int] = None,
-        nfft: Optional[int] = None,
-        detrend: Optional[str] = "constant",
-        scaling: Optional[str] = "density",
-        window_fcn: Callable[[int], np.ndarray] = np.blackman,
-        mode: str = "psd",
-    ) -> None:
-        super(Spectrogram, self).__init__()
-        self.nperseg: int = nperseg
-        self.noverlap: int = nperseg // 4 if noverlap is None else noverlap
-        self.nfft: int = nperseg if nfft is None else nfft
-        self.detrend: Optional[str] = None if detrend is None else detrend
-        self.scaling: Optional[str] = None if scaling is None else scaling
-        self.window_fcn = window_fcn
-        self.mode = mode
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "nperseg={}, ".format(nperseg)
-            + "noverlap={}, ".format(self.noverlap)
-            + "nfft={}, ".format(self.nfft)
-            + "detrend={}".format(self.detrend)
-            + "scaling={}".format(self.scaling)
-            + "window_fcn={}, ".format(window_fcn)
-            + "mode={}".format(mode)
-            + ")"
-        )
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.spectrogram(
-            signal["data"]["samples"],
-            self.nperseg,
-            self.noverlap,
-            self.nfft,
-            self.detrend,
-            self.scaling,
-            self.window_fcn,
-            self.mode,
-        )
-
-        if self.mode != "complex":
-            return signal
-
-        new_tensor = np.zeros((2, data_shape(signal["data"])[
-                              0], signal["data"]["samples"].shape[1]),)
-        new_tensor[0, :, :] = F.real(signal["data"]["samples"])
-        new_tensor[1, :, :] = F.imag(signal["data"]["samples"])
-        signal["data"]["samples"] = new_tensor
-        return signal
-
-    def transform_meta(self, signal: Signal, params: Tuple) -> Signal:
         return signal
 
 
@@ -1465,7 +990,7 @@ class ContinuousWavelet(SignalTransform):
         )
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.continuous_wavelet_transform(
+        signal["data"]["samples"] = F_LEGACY.continuous_wavelet_transform(
             signal["data"]["samples"],
             self.wavelet,
             self.nscales,
@@ -1608,14 +1133,14 @@ class RandomTimeShift(SignalTransform):
             decimal_part) if decimal_part else 0.0
         # Apply data transformation
         if float_decimal_part != 0:
-            signal["data"]["samples"] = F.fractional_shift(
+            signal["data"]["samples"] = F_LEGACY.fractional_shift(
                 signal["data"]["samples"],
                 self.taps,
                 self.interp_rate,
                 # this needed to be negated to be consistent with the previous implementation
                 -float_decimal_part,
             ) """
-        signal["data"]["samples"] = F.time_shift(
+        signal["data"]["samples"] = F_LEGACY.time_shift(
             signal["data"]["samples"], integer_time_shift)
 
         return signal
@@ -1751,7 +1276,7 @@ class TimeCrop(SignalTransform):
                 )
             )
 
-        signal["data"]["samples"] = F.time_crop(
+        signal["data"]["samples"] = F_LEGACY.time_crop(
             signal["data"]["samples"], params[0], self.crop_length)
         return signal
 
@@ -1777,74 +1302,6 @@ class TimeCrop(SignalTransform):
         return signal
 
 
-class TimeReversal(SignalTransform):
-    """Applies a time reversal to the input. Note that applying a time reversal
-    inherently also applies a spectral inversion. If a time-reversal without
-    spectral inversion is desired, the `undo_spectral_inversion` argument
-    can be set to True. By setting this value to True, an additional, manual
-    spectral inversion is applied to revert the time-reversal's inversion
-    effect.
-
-    Args:
-        undo_spectral_inversion (:obj:`bool`, :obj:`float`):
-            * If bool, undo_spectral_inversion is always/never applied
-            * If float, undo_spectral_inversion is a probability
-
-    """
-
-    def __init__(
-        self, undo_spectral_inversion: Union[bool, float] = True, **kwargs
-    ) -> None:
-        super(TimeReversal, self).__init__(**kwargs)
-        if isinstance(undo_spectral_inversion, bool):
-            self.undo_spectral_inversion: float = (
-                1.0 if undo_spectral_inversion else 0.0
-            )
-        else:
-            self.undo_spectral_inversion = undo_spectral_inversion
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "undo_spectral_inversion={}".format(undo_spectral_inversion)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (np.random.rand() <= self.undo_spectral_inversion,)
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.time_reversal(signal["data"]["samples"])
-
-        do_spectral_inversion = params[0]
-        if do_spectral_inversion:
-            signal["data"]["samples"] = F.spectral_inversion(
-                signal["data"]["samples"])
-
-        return signal
-
-    def transform_meta(self, signal: Signal, params: tuple) -> Signal:
-        if not has_rf_metadata(signal["metadata"]):
-            return signal
-
-        do_spectral_inversion = params[0]
-        for meta in signal["metadata"]:
-            # Invert time labels
-            original_start = meta["start"]
-            original_stop = meta["stop"]
-            meta["start"] = original_stop * -1 + 1.0
-            meta["stop"] = original_start * -1 + 1.0
-
-            if not do_spectral_inversion:
-                # Invert freq labels
-                original_lower = meta["lower_freq"]
-                original_upper = meta["upper_freq"]
-                meta["lower_freq"] = original_upper * -1
-                meta["upper_freq"] = original_lower * -1
-                meta["center_freq"] *= -1
-
-        return signal
-
-
 class AmplitudeReversal(SignalTransform):
     """Applies an amplitude reversal to the input tensor by applying a value of
     -1 to each sample. Effectively the same as a static phase shift of pi
@@ -1852,7 +1309,7 @@ class AmplitudeReversal(SignalTransform):
     """
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.amplitude_reversal(
+        signal["data"]["samples"] = F_LEGACY.amplitude_reversal(
             signal["data"]["samples"])
         return signal
 
@@ -1890,7 +1347,7 @@ class AmplitudeScale(SignalTransform):
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
         scale_value = params[0]
-        signal["data"]["samples"] = F.amplitude_scale(
+        signal["data"]["samples"] = F_LEGACY.amplitude_scale(
             signal["data"]["samples"], scale_value)
         return signal
 
@@ -1952,7 +1409,7 @@ class RandomFrequencyShift(SignalTransform):
         if not has_rf_metadata(signal["metadata"]):
             return signal
         freq_shift = self.check_freq_bounds(signal, params[0])
-        signal["data"]["samples"] = F.freq_shift(
+        signal["data"]["samples"] = F_LEGACY.freq_shift(
             signal["data"]["samples"], freq_shift)
 
         return signal
@@ -2021,7 +1478,7 @@ class RandomDelayedFrequencyShift(SignalTransform):
             num_iq_samples = data_shape(signal["data"])[0]
             signal["data"]["samples"][
                 int(start_shift * num_iq_samples):
-            ] = F.freq_shift(
+            ] = F_LEGACY.freq_shift(
                 signal["data"]["samples"][int(start_shift * num_iq_samples):],
                 freq_shift,
             )
@@ -2081,7 +1538,7 @@ class RandomDelayedFrequencyShift(SignalTransform):
             # If any potential aliasing detected, perform shifting at higher sample rate
             signal["data"]["samples"][
                 int(start_shift * data_shape(signal["data"])[0]):
-            ] = F.freq_shift_avoid_aliasing(
+            ] = F_LEGACY.freq_shift_avoid_aliasing(
                 signal["data"]["samples"][
                     int(start_shift * data_shape(signal["data"])[0]):
                 ],
@@ -2092,7 +1549,7 @@ class RandomDelayedFrequencyShift(SignalTransform):
         # Otherwise, use faster freq shifter
         signal["data"]["samples"][
             int(start_shift * data_shape(signal["data"])[0]):
-        ] = F.freq_shift(
+        ] = F_LEGACY.freq_shift(
             signal["data"]["samples"][
                 int(start_shift * data_shape(signal["data"])[0]):
             ],
@@ -2267,128 +1724,6 @@ class GainDrift(SignalTransform):
         return signal
 
 
-class AutomaticGainControl(SignalTransform):
-    """Automatic gain control (AGC) implementation
-
-    Args:
-        rand_scale (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            Random scaling of alpha values
-            * If Callable, produces a sample by calling rand_scale()
-            * If int or float, rand_scale is fixed at the value provided
-            * If list, rand_scale is any element in the list
-            * If tuple, rand_scale is in range of (tuple[0], tuple[1])
-
-        initial_gain_db (:obj:`float`):
-            Initial gain value in linear units
-
-        alpha_smooth (:obj:`float`):
-            Alpha for averaging the measured signal level level_n = level_n*alpha + level_n-1*(1 - alpha)
-
-        alpha_track (:obj:`float`):
-            Amount by which to adjust gain when in tracking state
-
-        alpha_overflow (:obj:`float`):
-            Amount by which to adjust gain when in overflow state [level_db + gain_db] >= max_level
-
-        alpha_acquire (:obj:`float`):
-            Amount by which to adjust gain when in acquire state abs([ref_level_db - level_db - gain_db]) >= track_range_db
-
-        ref_level_db (:obj:`float`):
-            Level to which we intend to adjust gain to achieve
-
-        track_range_db (:obj:`float`):
-            Range from ref_level_linear for which we can deviate before going into acquire state
-
-        low_level_db (:obj:`float`):
-            Level below which we disable AGC
-
-        high_level_db (:obj:`float`):
-            Level above which we go into overflow state
-
-    Example:
-        >>> import torchsig.transforms as ST
-        >>> transform = ST.AutomaticGainControl(rand_scale=(1.0,10.0))
-
-    """
-
-    def __init__(
-        self,
-        rand_scale: FloatParameter = (1.0, 10.0),
-        initial_gain_db: float = 0.0,
-        alpha_smooth: float = 0.00004,
-        alpha_overflow: float = 0.3,
-        alpha_track: float = 0.0004,
-        alpha_acquire: float = 0.04,
-        ref_level_db: float = 0.0,
-        track_range_db: float = 1.0,
-        low_level_db: float = -80.0,
-        high_level_db: float = 6.0,
-    ) -> None:
-        super(AutomaticGainControl, self).__init__()
-        self.rand_scale = to_distribution(rand_scale, self.random_generator)
-        self.initial_gain_db = initial_gain_db
-        self.alpha_smooth = alpha_smooth
-        self.alpha_overflow = alpha_overflow
-        self.alpha_track = alpha_track
-        self.alpha_acquire = alpha_acquire
-        self.ref_level_db = ref_level_db
-        self.track_range_db = track_range_db
-        self.low_level_db = low_level_db
-        self.high_level_db = high_level_db
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "rand_scale={}, ".format(rand_scale)
-            + "initial_gain_db={}, ".format(initial_gain_db)
-            + "alpha_smooth={}, ".format(alpha_smooth)
-            + "alpha_overflow={}, ".format(alpha_overflow)
-            + "alpha_track={}, ".format(alpha_track)
-            + "alpha_acquire={}, ".format(alpha_acquire)
-            + "ref_level_db={}, ".format(ref_level_db)
-            + "track_range_db={}, ".format(track_range_db)
-            + "low_level_db={}, ".format(low_level_db)
-            + "high_level_db={}".format(high_level_db)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.rand_scale(),)
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        rand_scale = params[0]
-        alpha_acquire = np.random.uniform(
-            self.alpha_acquire / rand_scale, self.alpha_acquire * rand_scale, 1
-        )
-        alpha_overflow = np.random.uniform(
-            self.alpha_overflow / rand_scale, self.alpha_overflow * rand_scale, 1
-        )
-        alpha_track = np.random.uniform(
-            self.alpha_track / rand_scale, self.alpha_track * rand_scale, 1
-        )
-        alpha_smooth = np.random.uniform(
-            self.alpha_smooth / rand_scale, self.alpha_smooth * rand_scale, 1
-        )
-
-        ref_level_db = np.random.uniform(
-            -0.5 + self.ref_level_db, 0.5 + self.ref_level_db, 1
-        )
-
-        signal["data"]["samples"] = F.agc(
-            np.ascontiguousarray(
-                signal["data"]["samples"], dtype=np.complex64),
-            np.float64(self.initial_gain_db),
-            np.float64(alpha_smooth),
-            np.float64(alpha_track),
-            np.float64(alpha_overflow),
-            np.float64(alpha_acquire),
-            np.float64(ref_level_db),
-            np.float64(self.track_range_db),
-            np.float64(self.low_level_db),
-            np.float64(self.high_level_db),
-        )
-        return signal
-
-
 class IQImbalance(SignalTransform):
     """Applies various types of IQ imbalance to a tensor
 
@@ -2521,20 +1856,9 @@ class RollOff(SignalTransform):
         low_freq, upper_freq, order = params
         low_freq = low_freq if np.random.rand() < self.low_cut_apply else 0.0
         upper_freq = upper_freq if np.random.rand() < self.upper_cut_apply else 1.0
-        signal["data"]["samples"] = F.roll_off(
+        signal["data"]["samples"] = F_LEGACY.roll_off(
             signal["data"]["samples"], low_freq, upper_freq, int(order)
         )
-        return signal
-
-
-class AddSlope(SignalTransform):
-    """Add the slope of each sample with its preceeding sample to itself.
-    Creates a weak 0 Hz IF notch filtering effect
-
-    """
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.add_slope(signal["data"]["samples"])
         return signal
 
 
@@ -2558,200 +1882,6 @@ class SpectralInversion(SignalTransform):
             meta["upper_freq"] = original_lower * -1
             meta["center_freq"] *= -1
 
-        return signal
-
-
-class ChannelSwap(SignalTransform):
-    """Transform that swaps the I and Q channels of complex input data"""
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.channel_swap(signal["data"]["samples"])
-        return signal
-
-    def transform_meta(self, signal: Signal, params: tuple) -> Signal:
-        if not has_rf_metadata(signal["metadata"]):
-            return signal
-
-        for meta in signal["metadata"]:
-            # Invert frequency labels
-            # Invert frequency labels
-            original_lower = meta["lower_freq"]
-            original_upper = meta["upper_freq"]
-            meta["lower_freq"] = original_upper * -1
-            meta["upper_freq"] = original_lower * -1
-            meta["center_freq"] *= -1
-
-        return signal
-
-
-class RandomMagRescale(SignalTransform):
-    """Randomly apply a magnitude rescaling, emulating a change in a receiver's
-    gain control
-
-    Args:
-         start (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            start sets the time when the rescaling kicks in
-            * If Callable, produces a sample by calling start()
-            * If int or float, start is fixed at the value provided
-            * If list, start is any element in the list
-            * If tuple, start is in range of (tuple[0], tuple[1])
-
-        scale (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            scale sets the magnitude of the rescale
-            * If Callable, produces a sample by calling scale()
-            * If int or float, scale is fixed at the value provided
-            * If list, scale is any element in the list
-            * If tuple, scale is in range of (tuple[0], tuple[1])
-
-    """
-
-    def __init__(
-        self,
-        start: NumericParameter = (0.0, 0.9),
-        scale: NumericParameter = (-4.0, 4.0),
-    ) -> None:
-        super(RandomMagRescale, self).__init__()
-        self.start = to_distribution(start, self.random_generator)
-        self.scale = to_distribution(scale, self.random_generator)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "start={}, ".format(start)
-            + "scale={}".format(scale)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.start(), self.scale())
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        start, scale = params
-        signal["data"]["samples"] = F.mag_rescale(
-            signal["data"]["samples"], start, scale
-        )
-        return signal
-
-
-class RandomDropSamples(SignalTransform):
-    """Randomly drop IQ samples from the input data of specified durations and
-    with specified fill techniques:
-    * `ffill` (front fill): replace drop samples with the last previous value
-    * `bfill` (back fill): replace drop samples with the next value
-    * `mean`: replace drop samples with the mean value of the full data
-    * `zero`: replace drop samples with zeros
-
-    Transform is based off of the
-    `TSAug Dropout Transform <https://github.com/arundo/tsaug/blob/master/src/tsaug/_augmenter/dropout.py>`_.
-
-    Args:
-         drop_rate (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            drop_rate sets the rate at which to drop samples
-            * If Callable, produces a sample by calling drop_rate()
-            * If int or float, drop_rate is fixed at the value provided
-            * If list, drop_rate is any element in the list
-            * If tuple, drop_rate is in range of (tuple[0], tuple[1])
-
-        size (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            size sets the size of each instance of dropped samples
-            * If Callable, produces a sample by calling size()
-            * If int or float, size is fixed at the value provided
-            * If list, size is any element in the list
-            * If tuple, size is in range of (tuple[0], tuple[1])
-
-        fill (:py:class:`~Callable`, :obj:`list`, :obj:`str`):
-            fill sets the method of how the dropped samples should be filled
-            * If Callable, produces a sample by calling fill()
-            * If list, fill is any element in the list
-            * If str, fill is fixed at the method provided
-
-    """
-
-    def __init__(
-        self,
-        drop_rate: NumericParameter = (0.01, 0.05),
-        size: NumericParameter = (1, 10),
-        fill: List[str] = (["ffill", "bfill", "mean", "zero"]),
-    ) -> None:
-        super(RandomDropSamples, self).__init__()
-        self.drop_rate = to_distribution(drop_rate, self.random_generator)
-        self.size = to_distribution(size, self.random_generator)
-        self.fill = to_distribution(fill, self.random_generator)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "drop_rate={}, ".format(drop_rate)
-            + "size={}, ".format(size)
-            + "fill={}".format(fill)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.drop_rate(), self.fill())
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        drop_rate, fill = params
-
-        # Perform data augmentation
-        drop_instances = int(data_shape(signal["data"])[0] * drop_rate)
-        drop_sizes = self.size(drop_instances).astype(int)
-        try:
-            drop_starts = np.random.uniform(
-                1, data_shape(signal["data"])[0] -
-                max(drop_sizes) - 1, drop_instances
-            ).astype(int)
-
-            signal["data"]["samples"] = F.drop_samples(
-                signal["data"]["samples"], drop_starts, drop_sizes, fill
-            )
-            return signal
-
-        except:
-            return signal
-
-
-class Quantize(SignalTransform):
-    """Quantize the input to the number of levels specified
-
-    Args:
-         num_levels (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            num_levels sets the number of quantization levels
-            * If Callable, produces a sample by calling num_levels()
-            * If int or float, num_levels is fixed at the value provided
-            * If list, num_levels is any element in the list
-            * If tuple, num_levels is in range of (tuple[0], tuple[1])
-
-        round_type (:py:class:`~Callable`, :obj:`str`, :obj:`list`):
-            round_type sets the rounding direction of the quantization. Options
-            include: 'floor', 'middle', & 'ceiling'
-            * If Callable, produces a sample by calling round_type()
-            * If str, round_type is fixed at the value provided
-            * If list, round_type is any element in the list
-    """
-
-    def __init__(
-        self,
-        num_levels: NumericParameter = ([16, 24, 32, 40, 48, 56, 64]),
-        round_type: List[str] = (["floor", "middle", "ceiling"]),
-    ) -> None:
-        super(Quantize, self).__init__()
-        self.num_levels = to_distribution(num_levels, self.random_generator)
-        self.round_type = to_distribution(round_type, self.random_generator)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "num_levels={}, ".format(num_levels)
-            + "round_type={}".format(round_type)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.num_levels(), self.round_type())
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        num_levels, round_type = params
-        signal["data"]["samples"] = F.quantize(
-            signal["data"]["samples"], num_levels, round_type
-        )
         return signal
 
 
@@ -2787,7 +1917,7 @@ class Clip(SignalTransform):
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
         clip_percentage = params[0]
-        signal["data"]["samples"] = F.clip(
+        signal["data"]["samples"] = F_LEGACY.clip(
             signal["data"]["samples"], clip_percentage)
         return signal
 
@@ -2838,7 +1968,7 @@ class RandomConvolve(SignalTransform):
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
         num_taps, alpha = params
-        signal["data"]["samples"] = F.random_convolve(
+        signal["data"]["samples"] = F_LEGACY.random_convolve(
             signal["data"]["samples"], num_taps, alpha)
         return signal
 
@@ -3067,156 +2197,6 @@ class DatasetBasebandCutMix(SignalTransform):
         for meta in signal["metadata"]:
             meta["duration"] = meta["stop"] - meta["start"]
 
-        return signal
-
-
-class CutOut(SignalTransform):
-    """A transform that applies the CutOut transform in the time domain. The
-    `cut_dur` input specifies how long the cut region should be, and the
-    `cut_type` input specifies what the cut region should be filled in with.
-    Options for the cut type include: zeros, ones, low_noise, avg_noise, and
-    high_noise. Zeros fills in the region with zeros; ones fills in the region
-    with 1+1j samples; low_noise fills in the region with noise with -100dB
-    power; avg_noise adds noise at power average of input data, effectively
-    slicing/removing existing signals in the most RF realistic way of the
-    options; and high_noise adds noise with 40dB power. If a list of multiple
-    options are passed in, they are randomly sampled from.
-
-    This transform is loosely based on
-    `"Improved Regularization of Convolutional Neural Networks with Cutout" <https://arxiv.org/pdf/1708.04552v2.pdf>`_.
-
-    Args:
-        duration (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            cut_dur sets the duration of the region to cut out
-            * If Callable, produces a sample by calling cut_dur()
-            * If int or float, cut_dur is fixed at the value provided
-            * If list, cut_dur is any element in the list
-            * If tuple, cut_dur is in range of (tuple[0], tuple[1])
-
-        type (:py:class:`~Callable`, :obj:`list`, :obj:`str`):
-            cut_type sets the type of data to fill in the cut region with from
-            the options: `zeros`, `ones`, `low_noise`, `avg_noise`, and
-            `high_noise`
-            * If Callable, produces a sample by calling cut_type()
-            * If list, cut_type is any element in the list
-            * If str, cut_type is fixed at the method provided
-
-    """
-
-    def __init__(
-        self,
-        duration: NumericParameter = (0.01, 0.2),
-        type: List[str] = (["zeros", "ones", "low_noise",
-                           "avg_noise", "high_noise"]),
-    ) -> None:
-        super(CutOut, self).__init__()
-        self.duration = to_distribution(duration, self.random_generator)
-        self.type = to_distribution(type, self.random_generator)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "duration={}, ".format(duration)
-            + "type={}".format(type)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        duration = self.duration()
-        start = np.random.uniform(0, 1 - duration)
-        return (duration, start, self.type())
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        duration, start, type = params
-        start = np.random.uniform(0.0, 1.0 - duration)
-        signal["data"]["samples"] = F.cut_out(
-            signal["data"]["samples"], start, duration, type
-        )
-        return signal
-
-    def transform_meta(self, signal: Signal, params: tuple) -> Signal:
-        if not has_rf_metadata(signal["metadata"]):
-            return signal
-
-        duration, start, _ = params
-        new_meta = []
-        for meta in signal["metadata"]:
-            # Update labels
-            if meta["start"] > start and meta["start"] < start + duration:
-                # Label starts within cut region
-                if meta["stop"] > start and meta["stop"] < start + duration:
-                    # Label also stops within cut region --> Remove label
-                    continue
-                else:
-                    # Push label start to end of cut region
-                    meta["start"] = start + duration
-            elif meta["stop"] > start and meta["stop"] < start + duration:
-                # Label stops within cut region but does not start in region --> Push stop to begining of cut region
-                meta["stop"] = start
-            elif meta["start"] < start and meta["stop"] > start + duration:
-                # Label traverse cut region --> Split into two labels
-                meta_split = deepcopy(meta)
-                # Update first label region's stop
-                meta["stop"] = start
-                # Update second label region's start & append to description collection
-                meta_split["start"] = start + duration
-                new_meta.append(meta_split)
-            new_meta.append(meta)
-            signal["metadata"] = new_meta
-
-        return signal
-
-
-class PatchShuffle(SignalTransform):
-    """Randomly shuffle multiple local regions of samples.
-
-    Transform is loosely based on
-    `"PatchShuffle Regularization" <https://arxiv.org/pdf/1707.07103.pdf>`_.
-
-    Args:
-         patch_size (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            patch_size sets the size of each patch to shuffle
-            * If Callable, produces a sample by calling patch_size()
-            * If int or float, patch_size is fixed at the value provided
-            * If list, patch_size is any element in the list
-            * If tuple, patch_size is in range of (tuple[0], tuple[1])
-
-        shuffle_ratio (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            shuffle_ratio sets the ratio of the patches to shuffle
-            * If Callable, produces a sample by calling shuffle_ratio()
-            * If int or float, shuffle_ratio is fixed at the value provided
-            * If list, shuffle_ratio is any element in the list
-            * If tuple, shuffle_ratio is in range of (tuple[0], tuple[1])
-
-    """
-
-    def __init__(
-        self,
-        patch_size: NumericParameter = (3, 10),
-        shuffle_ratio: FloatParameter = (0.01, 0.05),
-    ) -> None:
-        super(PatchShuffle, self).__init__()
-        self.patch_size = to_distribution(patch_size, self.random_generator)
-        self.shuffle_ratio = to_distribution(
-            shuffle_ratio, self.random_generator)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "patch_size={}, ".format(patch_size)
-            + "shuffle_ratio={}".format(shuffle_ratio)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.patch_size(), self.shuffle_ratio())
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        patch_size, shuffle_ratio = params
-        signal["data"]["samples"] = F.patch_shuffle(
-            signal["data"]["samples"], patch_size, shuffle_ratio
-        )
-        return signal
-
-    def transform_meta(self, signal: Signal, params: tuple) -> Signal:
         return signal
 
 
@@ -3757,93 +2737,6 @@ class SpectrogramRandomResizeCrop(SignalTransform):
         return spec_data
 
 
-class SpectrogramDropSamples(SignalTransform):
-    """Randomly drop samples from the input data of specified durations and
-    with specified fill techniques:
-    * `ffill` (front fill): replace drop samples with the last previous value
-    * `bfill` (back fill): replace drop samples with the next value
-    * `mean`: replace drop samples with the mean value of the full data
-    * `zero`: replace drop samples with zeros
-    * `low`: replace drop samples with low power samples
-    * `min`: replace drop samples with the minimum of the absolute power
-    * `max`: replace drop samples with the maximum of the absolute power
-    * `ones`: replace drop samples with ones
-
-    Transform is based off of the
-    `TSAug Dropout Transform <https://github.com/arundo/tsaug/blob/master/src/tsaug/_augmenter/dropout.py>`_.
-
-    Args:
-         drop_rate (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            drop_rate sets the rate at which to drop samples
-            * If Callable, produces a sample by calling drop_rate()
-            * If int or float, drop_rate is fixed at the value provided
-            * If list, drop_rate is any element in the list
-            * If tuple, drop_rate is in range of (tuple[0], tuple[1])
-
-        size (:py:class:`~Callable`, :obj:`int`, :obj:`float`, :obj:`list`, :obj:`tuple`):
-            size sets the size of each instance of dropped samples
-            * If Callable, produces a sample by calling size()
-            * If int or float, size is fixed at the value provided
-            * If list, size is any element in the list
-            * If tuple, size is in range of (tuple[0], tuple[1])
-
-        fill (:py:class:`~Callable`, :obj:`list`, :obj:`str`):
-            fill sets the method of how the dropped samples should be filled
-            * If Callable, produces a sample by calling fill()
-            * If list, fill is any element in the list
-            * If str, fill is fixed at the method provided
-
-    """
-
-    def __init__(
-        self,
-        drop_rate: NumericParameter = (0.001, 0.005),
-        size: NumericParameter = (1, 10),
-        fill: List[str] = (
-            ["ffill", "bfill", "mean", "zero", "low", "min", "max", "ones"]
-        ),
-    ) -> None:
-        super(SpectrogramDropSamples, self).__init__()
-        self.drop_rate = to_distribution(drop_rate, self.random_generator)
-        self.size = to_distribution(size, self.random_generator)
-        self.fill = to_distribution(fill, self.random_generator)
-        self.string = (
-            self.__class__.__name__
-            + "("
-            + "drop_rate={}, ".format(drop_rate)
-            + "size={}, ".format(size)
-            + "fill={}".format(fill)
-            + ")"
-        )
-
-    def parameters(self) -> tuple:
-        return (self.drop_rate(), self.fill())
-
-    def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        drop_rate, fill = params
-        drop_instances = int(data_shape(signal["data"])[0] * drop_rate)
-        drop_sizes = self.size(drop_instances).astype(int)
-        # if drop sizes is empty, just return signal
-        try:
-            drop_starts = np.random.uniform(
-                0, data_shape(signal["data"])[0] -
-                max(drop_sizes), drop_instances
-            ).astype(int)
-
-            signal["data"]["samples"] = F.drop_spec_samples(
-                signal["data"]["samples"],
-                drop_starts,
-                drop_sizes,
-                fill,
-            )
-            return signal
-        except:
-            return signal
-
-    def transform_meta(self, signal: Signal, params: tuple) -> Signal:
-        return signal
-
-
 class SpectrogramPatchShuffle(SignalTransform):
     """Randomly shuffle multiple local regions of samples.
 
@@ -3889,7 +2782,7 @@ class SpectrogramPatchShuffle(SignalTransform):
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
         patch_size, shuffle_ratio = params
-        signal["data"]["samples"] = F.spec_patch_shuffle(
+        signal["data"]["samples"] = F_LEGACY.spec_patch_shuffle(
             signal["data"]["samples"], patch_size, shuffle_ratio
         )
         return signal
@@ -3940,7 +2833,7 @@ class SpectrogramTranslation(SignalTransform):
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
         time_shift, freq_shift = params
-        signal["data"]["samples"] = F.spec_translate(
+        signal["data"]["samples"] = F_LEGACY.spec_translate(
             signal["data"]["samples"], time_shift, freq_shift
         )
         return signal
@@ -4179,7 +3072,7 @@ class SpectrogramImage(SignalTransform):
         )
 
     def transform_data(self, signal: Signal, params: tuple) -> Signal:
-        signal["data"]["samples"] = F.spectrogram_image(
+        signal["data"]["samples"] = F_LEGACY.spectrogram_image(
             signal["data"]["samples"],
         )
         return signal
