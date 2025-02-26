@@ -25,6 +25,7 @@ class DatasetFactory:
 
         return dataset_class(
             root=config.root,
+            dataset_name=config.dataset_name,
             download=config.download,
             batch_size=config.batch_size,
             num_workers=config.num_workers,

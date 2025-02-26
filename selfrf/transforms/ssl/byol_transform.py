@@ -2,14 +2,13 @@ from typing import Optional
 import numpy as np
 from torch import Tensor
 
-from torchsig import transforms as T
 from torchsig.utils.types import Signal
 
-
+from ..extra import torchsig_legacy_transforms as T_LEGACY
 from ..extra import MultiViewTransform
 
 
-class BYOLView1Transform(T.Transform):
+class BYOLView1Transform(T_LEGACY.Transform):
     def __init__(self,
                  max_time_shift: int = 500,
                  max_freq_shift: float = 0.15,
@@ -20,29 +19,29 @@ class BYOLView1Transform(T.Transform):
                  min_amplitude_scale: float = -6,
                  max_amplitude_scale: float = 6,
                  max_phase_shift_rad: float = np.pi/4,
-                 tensor_transform: T.SignalTransform = T.ComplexTo2D(),
+                 tensor_transform: T_LEGACY.SignalTransform = T_LEGACY.ComplexTo2D(),
                  ) -> None:
         super().__init__()
 
         transforms = [
-            T.RandomTimeShift((-max_time_shift, max_time_shift)),
-            T.RandomFrequencyShift((-max_freq_shift, max_freq_shift)),
-            T.RandomApply(T.TimeReversal(), tr_prob),
-            T.RandomApply(T.SpectralInversion(), si_prob),
-            T.AddNoise((min_snr_db, max_snr_db)),
+            T_LEGACY.RandomTimeShift((-max_time_shift, max_time_shift)),
+            T_LEGACY.RandomFrequencyShift((-max_freq_shift, max_freq_shift)),
+            T_LEGACY.RandomApply(T_LEGACY.TimeReversal(), tr_prob),
+            T_LEGACY.RandomApply(T_LEGACY.SpectralInversion(), si_prob),
+            T_LEGACY.AddNoise((min_snr_db, max_snr_db)),
             # AmplitudeScale((min_amplitude_scale, max_amplitude_scale)),
-            T.RandomPhaseShift((0, max_phase_shift_rad)),
+            T_LEGACY.RandomPhaseShift((0, max_phase_shift_rad)),
             tensor_transform,
         ]
 
-        self.transform = T.Compose(transforms=transforms)
+        self.transform = T_LEGACY.Compose(transforms=transforms)
 
     def __call__(self, signal: Signal) -> Tensor:
 
         return self.transform(signal)
 
 
-class BYOLView2Transform(T.Transform):
+class BYOLView2Transform(T_LEGACY.Transform):
     def __init__(self,
                  max_time_shift: int = 1000,
                  max_freq_shift: float = 0.15,
@@ -53,22 +52,22 @@ class BYOLView2Transform(T.Transform):
                  min_amplitude_scale: float = -10,
                  max_amplitude_scale: float = 10,
                  max_phase_shift_rad: float = np.pi/8,
-                 tensor_transform: T.SignalTransform = T.ComplexTo2D(),
+                 tensor_transform: T_LEGACY.SignalTransform = T_LEGACY.ComplexTo2D(),
                  ) -> None:
         super().__init__()
 
         transforms = [
-            T.RandomTimeShift((-max_time_shift, max_time_shift)),
-            T.RandomFrequencyShift((-max_freq_shift, max_freq_shift)),
-            T.RandomApply(T.TimeReversal(), tr_prob),
-            T.RandomApply(T.SpectralInversion(), si_prob),
-            T.AddNoise((min_snr_db, max_snr_db)),
+            T_LEGACY.RandomTimeShift((-max_time_shift, max_time_shift)),
+            T_LEGACY.RandomFrequencyShift((-max_freq_shift, max_freq_shift)),
+            T_LEGACY.RandomApply(T_LEGACY.TimeReversal(), tr_prob),
+            T_LEGACY.RandomApply(T_LEGACY.SpectralInversion(), si_prob),
+            T_LEGACY.AddNoise((min_snr_db, max_snr_db)),
             # AmplitudeScale((min_amplitude_scale, max_amplitude_scale)),
-            T.RandomPhaseShift((0, max_phase_shift_rad)),
+            T_LEGACY.RandomPhaseShift((0, max_phase_shift_rad)),
             tensor_transform,
         ]
 
-        self.transform = T.Compose(transforms=transforms)
+        self.transform = T_LEGACY.Compose(transforms=transforms)
 
     def __call__(self, signal: Signal) -> Tensor:
 
@@ -80,7 +79,7 @@ class BYOLTransform(MultiViewTransform):
         self,
         view_1_transform: Optional[BYOLView1Transform] = None,
         view_2_transform: Optional[BYOLView2Transform] = None,
-        tensor_transform: T.SignalTransform = T.ComplexTo2D(),
+        tensor_transform: T_LEGACY.SignalTransform = T_LEGACY.ComplexTo2D(),
     ):
         # We need to initialize the transforms here
         view_1_transform = view_1_transform or BYOLView1Transform(

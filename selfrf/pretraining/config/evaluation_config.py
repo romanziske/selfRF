@@ -1,7 +1,7 @@
 import argparse
 from dataclasses import dataclass
 
-from .base_config import BaseConfig, add_base_config_args
+from .base_config import BaseConfig, add_base_config_args, parse_base_config
 
 DEFAULT_TSNE = True
 DEFAULT_KNN = True
@@ -48,7 +48,30 @@ def add_evaluation_config_args(parser: argparse.ArgumentParser) -> None:
 
 
 def parse_evaluation_config() -> EvaluationConfig:
+    """Parse command line arguments into an EvaluationConfig object.
+
+    Creates a base config first, then builds evaluation config from it.
+    """
+    # Create parser with description
     parser = argparse.ArgumentParser(description="Evaluation Config")
     add_evaluation_config_args(parser)
+
+    # First parse the base config (handles num_iq_samples properly)
+    base_config = parse_base_config(parser)
+
+    # Get the args again to extract evaluation-specific fields
     args = parser.parse_args()
-    return EvaluationConfig(**vars(args))
+
+    # Create EvaluationConfig by combining base config and evaluation args
+    evaluation_config = EvaluationConfig(
+        **vars(base_config),  # Unpack base config
+
+        # Add evaluation fields
+        model_path=args.model_path,
+        tsne=args.tsne,
+        knn=args.knn,
+        n_neighbors=args.n_neighbors,
+        evaluation_path=args.export_path  # Note the name difference in CLI arg
+    )
+
+    return evaluation_config

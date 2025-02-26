@@ -20,34 +20,34 @@ DEFAULT_BACKBONE = BackboneType.RESNET50
 DEFAULT_EMBEDDING_DIM = 2048
 DEFAULT_DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEFAULT_TO_FLOAT_32 = False
+DATASET_IQ_SAMPLES = {
+    DatasetType.TORCHSIG_WIDEBAND: 262144,
+    DatasetType.TORCHSIG_NARROWBAND: 4096,
+}
 
 
 @dataclass
 class BaseConfig:
     dataset: DatasetType = DEFAULT_DATASET
+    dataset_name: str = None
     root: str = DEFAULT_ROOT
     download: bool = False
     family: bool = DEFAULT_FAMILY
 
-    _num_iq_samples: Optional[int] = None  # Private field for storage
+    # Add private storage field
+    _custom_iq_samples: Optional[int] = None
 
     @property
     def num_iq_samples(self) -> int:
-        """Get number of IQ samples based on dataset type."""
-        if self._num_iq_samples is not None:
-            return self._num_iq_samples
-        # Default values optimized for each dataset type
-        if self.dataset == DatasetType.TORCHSIG_WIDEBAND:
-            return 262144  # samples for wideband
-        elif self.dataset == DatasetType.TORCHSIG_NARROWBAND:
-            return 4096  # samples for narrowband
-        else:
-            return 4096  # Default fallback
+        """Get number of IQ samples based on dataset type or user override."""
+        if self._custom_iq_samples is not None:
+            return self._custom_iq_samples
+        return DATASET_IQ_SAMPLES.get(self.dataset)
 
     @num_iq_samples.setter
     def num_iq_samples(self, value: int):
         """Set custom number of IQ samples."""
-        self._num_iq_samples = value
+        self._custom_iq_samples = value
 
     spectrogram: bool = DEFAULT_SPECTROGRAM
     nfft: int = DEFAULT_NFFT
@@ -71,6 +71,11 @@ def add_base_config_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_DATASET,
     )
     parser.add_argument(
+        '--dataset-name',
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         '--root',
         type=str,
         default=DEFAULT_ROOT,
@@ -89,6 +94,10 @@ def add_base_config_args(parser: argparse.ArgumentParser) -> None:
         '--num-iq-samples',
         type=int,
         default=None,
+        help=(f'Number of IQ samples to use. Defaults based on dataset: '
+              f'Wideband={DATASET_IQ_SAMPLES[DatasetType.TORCHSIG_WIDEBAND]}, '
+              f'Narrowband={DATASET_IQ_SAMPLES[DatasetType.TORCHSIG_NARROWBAND]}. '
+              f'Set this to override the default for your dataset.')
     )
     parser.add_argument(
         '--spectrogram',
@@ -139,17 +148,44 @@ def add_base_config_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def parse_base_config(parser: argparse.ArgumentParser) -> BaseConfig:
+    """Parse command line arguments into a BaseConfig object."""
+    args = parser.parse_args()
+    args_dict = vars(args)
+
+    # Get all field names from BaseConfig
+    base_field_names = {f.name for f in fields(BaseConfig)}
+
+    # Handle num_iq_samples specially
+    custom_samples = args_dict.pop('num_iq_samples', None)
+
+    # Filter args_dict to only include fields in BaseConfig
+    filtered_args = {k: v for k,
+                     v in args_dict.items() if k in base_field_names}
+
+    # Create config with only the fields BaseConfig knows about
+    config = BaseConfig(**filtered_args)
+
+    # Set custom samples if provided
+    if custom_samples is not None:
+        config.num_iq_samples = custom_samples
+
+    return config
+
+
 def print_config(config: BaseConfig) -> None:
     """Print config in a structured format"""
-    # ANSI color codes
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    ENDC = '\033[0m'
-
-    print(f"\n{BLUE}Configuration:{ENDC}")
+    print("\nConfiguration:")
 
     # Get fields directly from config instance
     for field in fields(config):
-        value = getattr(config, field.name)
-        print(f"  {CYAN}{field.name}:{ENDC} {GREEN}{value}{ENDC}")
+        # Skip private fields that start with underscore
+        if field.name.startswith('_'):
+            continue
+
+        if field.name == 'num_iq_samples':
+            # Get property value for num_iq_samples
+            value = config.num_iq_samples
+        else:
+            value = getattr(config, field.name)
+        print(f"  {field.name}: {value}")
