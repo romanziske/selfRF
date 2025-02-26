@@ -7,20 +7,20 @@ from selfrf.pretraining.utils.utils import get_class_list
 from selfrf.models.iq_models import build_resnet1d
 from selfrf.models.spectrogram_models import build_resnet2d, build_vit
 from selfrf.models.ssl_models import BYOL
-from selfrf.pretraining.utils.enums import BackboneType, SSLModelType
+from selfrf.pretraining.utils.enums import BackboneArchitecture, SSLModelType
 
 
 @dataclass(frozen=True)  # makes the dataclass immutable
 class BackboneConfig:
-    backbone_type: BackboneType
+    backbone_arch: BackboneArchitecture
     is_spectrogram: bool
 
 
 class ModelFactory:
     _backbone_registry: Dict[BackboneConfig, Callable] = {
-        BackboneConfig(BackboneType.RESNET50, False): lambda **kwargs: build_resnet1d(version="50", input_channels=2, ** kwargs),
-        BackboneConfig(BackboneType.RESNET50, True): lambda **kwargs: build_resnet2d(version="50", input_channels=1, ** kwargs),
-        BackboneConfig(BackboneType.VIT_B, True): lambda **kwargs: build_vit(version="b", input_channels=1, ** kwargs),
+        BackboneConfig(BackboneArchitecture.RESNET, False): lambda **kwargs: build_resnet1d(input_channels=2, ** kwargs),
+        BackboneConfig(BackboneArchitecture.RESNET, True): lambda **kwargs: build_resnet2d(input_channels=1, ** kwargs),
+        BackboneConfig(BackboneArchitecture.VIT, True): lambda **kwargs: build_vit(input_channels=1, ** kwargs),
     }
 
     _ssl_registry: Dict[SSLModelType, Type] = {
@@ -30,12 +30,36 @@ class ModelFactory:
     @classmethod
     def create_backbone(cls, config: BaseConfig) -> torch.nn.Module:
         """Create backbone from config"""
+        backbone_arch = config.backbone.get_architecture()
+        is_spectrogram = config.spectrogram
         backbone_config = BackboneConfig(
-            backbone_type=BackboneType(config.backbone),
-            is_spectrogram=config.spectrogram
+            backbone_arch=backbone_arch,
+            is_spectrogram=is_spectrogram
         )
-        builder = cls._backbone_registry[backbone_config]
+
+        try:
+            builder = cls._backbone_registry[backbone_config]
+        except KeyError:
+            # Create a more informative error message
+            data_type = "spectrogram" if is_spectrogram else "IQ"
+
+            # Get available configurations
+            available_configs = []
+            for cfg in cls._backbone_registry.keys():
+                data_str = "spectrogram" if cfg.is_spectrogram else "IQ"
+                available_configs.append(
+                    f"{cfg.backbone_arch.value} with {data_str} data")
+
+            raise ValueError(
+                f"No backbone implementation found for '{backbone_arch.name}' architecture with {data_type} data.\n"
+                f"Make sure 'spectrogram={is_spectrogram}' is compatible with your backbone choice.\n"
+                f"Available combinations:\n" +
+                "\n".join(f"- {c}" for c in available_configs)
+            )
+
         return builder(
+            version=config.backbone.get_size().value,
+            provider=config.backbone_provider,
             n_features=config.embedding_dim
         )
 

@@ -1,7 +1,12 @@
+from typing import Literal
+import timm
+import torch
 from torch import nn
 from detectron2.config import get_cfg
 from detectron2 import model_zoo
 from detectron2.modeling import build_model
+
+from selfrf.pretraining.utils.enums import BackboneProvider
 
 __all__ = ["build_resnet2d"]
 
@@ -32,10 +37,10 @@ def build_detectron2_resnet(
 
     # Configure model
     cfg.MODEL.WEIGHTS = ""  # No pretrained weights
-    cfg.MODEL.PIXEL_MEAN = [128.0] * input_channels  # Zero mean per channel
-    cfg.MODEL.PIXEL_STD = [128.0] * input_channels   # Unit std per channel
+    cfg.MODEL.PIXEL_MEAN = [0] * input_channels  # Zero mean per channel
+    cfg.MODEL.PIXEL_STD = [1.0] * input_channels   # Unit std per channel
     cfg.INPUT.FORMAT = "L"
-    cfg.MODEL.DEVICE = "cpu"
+    cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Build model
     det_model = build_model(cfg)
@@ -54,6 +59,7 @@ def build_resnet2d(
     input_channels: int,
     n_features: int,
     version: str = "50",
+    provider: BackboneProvider = BackboneProvider.TIMM,
 ):
     """Constructs and returns a version of the ResNet model.
     Args:
@@ -75,8 +81,23 @@ def build_resnet2d(
 
     """
 
-    return build_detectron2_resnet(
-        input_channels=input_channels,
-        n_features=n_features,
-        version=version
-    )
+    if provider is BackboneProvider.TIMM:
+        model = timm.create_model(
+            "resnet" + version,
+            in_chans=input_channels,
+            features_only=False,
+        )
+
+        model.fc = nn.Linear(model.fc.in_features, n_features)
+        return model
+
+    elif provider is BackboneProvider.DETECTRON2:
+
+        return build_detectron2_resnet(
+            input_channels=input_channels,
+            n_features=n_features,
+            version=version
+        )
+
+    else:
+        raise ValueError(f"{provider} does not provider a ResNet 2D backbone.")

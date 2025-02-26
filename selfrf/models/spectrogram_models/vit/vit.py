@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 from detectron2.modeling.backbone.vit import ViT
 
+from selfrf.pretraining.utils.enums import BackboneProvider
+
 __all__ = ["build_vit"]
 
 
@@ -57,6 +59,7 @@ def build_vit(
     input_channels: int,
     n_features: int,
     version: str = "b",
+    provider: BackboneProvider = BackboneProvider.DETECTRON2,
     img_size: int = 512,
     patch_size: int = 16,
     drop_path_rate: float = 0.1,
@@ -83,6 +86,11 @@ def build_vit(
     Returns:
         nn.Module: An instance of ViTClassifier.
     """
+
+    if provider is not BackboneProvider.DETECTRON2:
+        raise ValueError(f"{provider} does not provide a ViT backbone.")
+
+    # TODO: get this config from the actual vit det detectron2 implementation
     model_configs: Dict[str, Dict[str, int]] = {
         "b": {"embed_dim": 768, "depth": 12, "num_heads": 12},
         "l": {"embed_dim": 1024, "depth": 24, "num_heads": 16},

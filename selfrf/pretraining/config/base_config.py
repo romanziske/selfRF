@@ -4,7 +4,7 @@ from typing import Optional
 
 import torch
 
-from selfrf.pretraining.utils.enums import BackboneType, DatasetType
+from selfrf.pretraining.utils.enums import BackboneProvider, BackboneType, DatasetType
 
 # Default values as constants
 DEFAULT_DATASET = DatasetType.TORCHSIG_NARROWBAND
@@ -16,7 +16,10 @@ DEFAULT_NFFT = 512
 DEFAULT_NOVERLAP = 0
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_NUM_WORKERS = 4
+
 DEFAULT_BACKBONE = BackboneType.RESNET50
+DEFAULT_BACKBONE_PROVIDER = BackboneProvider.TIMM
+
 DEFAULT_EMBEDDING_DIM = 2048
 DEFAULT_DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 DEFAULT_TO_FLOAT_32 = False
@@ -57,6 +60,7 @@ class BaseConfig:
     num_workers: int = DEFAULT_NUM_WORKERS
 
     backbone: BackboneType = DEFAULT_BACKBONE
+    backbone_provider: BackboneProvider = DEFAULT_BACKBONE_PROVIDER
     embedding_dim: int = DEFAULT_EMBEDDING_DIM
 
     device: torch.device = DEFAULT_DEVICE
@@ -131,9 +135,16 @@ def add_base_config_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         '--backbone',
-        type=lambda x: BackboneType(x),
+        type=BackboneType.from_string,
         choices=list(BackboneType),
         default=DEFAULT_BACKBONE,
+    )
+    parser.add_argument(
+        '--backbone-provider',
+        type=BackboneProvider.from_string,
+        choices=list(BackboneProvider),
+        default=DEFAULT_BACKBONE_PROVIDER,
+        help='Provider library for the backbone implementation'
     )
     parser.add_argument(
         '--device',
